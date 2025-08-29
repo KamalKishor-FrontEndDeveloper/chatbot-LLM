@@ -94,6 +94,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Book appointment
+  app.post("/api/appointments/book", async (req, res) => {
+    try {
+      const appointmentSchema = z.object({
+        name: z.string().min(1, "Name is required"),
+        email: z.string().email("Valid email is required"),
+        phone: z.string().min(10, "Valid phone number is required"),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format"),
+        service: z.string().min(1, "Service type is required"),
+        message: z.string().optional(),
+        clinic_location_id: z.number().optional(),
+        app_source: z.string().optional()
+      });
+
+      const appointmentData = appointmentSchema.parse(req.body);
+      const result = await healthcareApi.bookAppointment(appointmentData);
+
+      res.json({
+        success: result.success,
+        message: result.message
+      });
+    } catch (error) {
+      console.error("Appointment Booking API Error:", error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to book appointment"
+      });
+    }
+  });
+
 
   const httpServer = createServer(app);
   return httpServer;
