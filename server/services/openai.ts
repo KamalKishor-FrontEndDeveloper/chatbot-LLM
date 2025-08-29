@@ -25,9 +25,14 @@ export class OpenAIService {
       // Generate a contextual response
       const response = await this.generateResponse(userMessage, treatments, intent);
       
+      // For price inquiries with no results, don't return unrelated treatments
+      const priceLimit = this.extractPriceLimit(userMessage);
+      const isSpecificPriceQuery = intent === 'cost_inquiry' && priceLimit !== null;
+      const shouldShowTreatments = (isSpecificPriceQuery && treatments.length === 0) ? false : treatments.length > 0;
+      
       return {
         message: response,
-        treatments: treatments.length > 0 ? treatments : undefined,
+        treatments: shouldShowTreatments ? treatments : undefined,
         intent,
       };
     } catch (error) {
@@ -77,6 +82,11 @@ export class OpenAIService {
   private async getRelevantTreatments(userMessage: string, intent: string): Promise<HealthcareTreatment[]> {
     switch (intent) {
       case 'cost_inquiry':
+        // Check if user specified a price range
+        const priceLimit = this.extractPriceLimit(userMessage);
+        if (priceLimit !== null) {
+          return await this.filterTreatmentsByPrice(priceLimit, userMessage);
+        }
         return await healthcareApi.getTreatmentsByPrice();
       
       case 'treatment_list':
@@ -91,14 +101,72 @@ export class OpenAIService {
     }
   }
 
+  private extractPriceLimit(message: string): number | null {
+    // Look for patterns like "under ₹100", "below 500", "less than ₹1000"
+    const patterns = [
+      /under\s*₹?(\d+)/i,
+      /below\s*₹?(\d+)/i,
+      /less\s*than\s*₹?(\d+)/i,
+      /maximum\s*₹?(\d+)/i,
+      /max\s*₹?(\d+)/i,
+      /up\s*to\s*₹?(\d+)/i
+    ];
+    
+    for (const pattern of patterns) {
+      const match = message.match(pattern);
+      if (match) {
+        return parseInt(match[1]);
+      }
+    }
+    return null;
+  }
+
+  private async filterTreatmentsByPrice(maxPrice: number, originalMessage: string): Promise<HealthcareTreatment[]> {
+    const allTreatments = await healthcareApi.getTreatmentsByPrice();
+    const flatTreatments = this.flattenTreatments(allTreatments);
+    
+    const filteredTreatments = flatTreatments.filter(treatment => {
+      const price = parseInt(treatment.price);
+      return !isNaN(price) && price < maxPrice; // Use < instead of <= to exclude exact matches when looking for "under"
+    });
+    
+    console.log(`Filtering treatments under ₹${maxPrice}: found ${filteredTreatments.length} results`);
+    return filteredTreatments;
+  }
+
+  private flattenTreatments(treatments: HealthcareTreatment[]): HealthcareTreatment[] {
+    const result: HealthcareTreatment[] = [];
+    
+    const flatten = (items: HealthcareTreatment[]) => {
+      for (const item of items) {
+        result.push(item);
+        if (item.children && item.children.length > 0) {
+          flatten(item.children as HealthcareTreatment[]);
+        }
+      }
+    };
+    
+    flatten(treatments);
+    return result;
+  }
+
   private async generateResponse(
     userMessage: string, 
     treatments: HealthcareTreatment[], 
     intent: string
   ): Promise<string> {
-    const treatmentContext = treatments.length > 0 ? 
-      `Available treatments: ${JSON.stringify(treatments.slice(0, 5))}` : 
-      'No specific treatments found.';
+    // Check if this is a price inquiry with specific criteria
+    const priceLimit = this.extractPriceLimit(userMessage);
+    const isSpecificPriceQuery = intent === 'cost_inquiry' && priceLimit !== null;
+    
+    let treatmentContext: string;
+    if (treatments.length > 0) {
+      treatmentContext = `Available treatments matching criteria: ${JSON.stringify(treatments.slice(0, 5))}`;
+    } else if (isSpecificPriceQuery) {
+      treatmentContext = `No treatments found within the specified price range of ₹${priceLimit}. User asked for treatments under ₹${priceLimit}.`;
+    } else {
+      treatmentContext = 'No specific treatments found.';
+    }
 
     const response = await openai.chat.completions.create({
       model: "gpt-5",
@@ -109,13 +177,16 @@ export class OpenAIService {
           
           Guidelines:
           - Be professional, empathetic, and informative
+          - Use proper formatting with clear line breaks and bullet points when listing information
+          - If no treatments match specific price criteria, politely explain this and suggest alternatives (higher budget ranges)
           - If treatments are provided, reference them in your response
-          - For cost inquiries, mention specific prices if available, otherwise suggest contacting for quotes
-          - For treatment lists, summarize what's available
+          - For cost inquiries with no results, suggest the closest available options or alternative budget ranges
+          - For treatment lists, summarize what's available in an organized way
           - For doctor inquiries, mention doctor availability from the data
           - Always encourage users to consult with healthcare professionals for medical advice
-          - Keep responses concise but informative
+          - Keep responses concise but informative and well-formatted
           - Use a warm, helpful tone
+          - When suggesting alternatives, be specific about price ranges (e.g., "under ₹500" or "under ₹1000")
           
           Treatment data format:
           - id: unique identifier
@@ -124,7 +195,9 @@ export class OpenAIService {
           - price: cost (empty string means contact for quote)
           - doctors: JSON array of doctor IDs
           - parent_id: parent category
-          - children: sub-treatments`
+          - children: sub-treatments
+          
+          IMPORTANT: If no treatments match the user's price criteria, DO NOT suggest showing expensive treatments. Instead, suggest reasonable alternative price ranges.`
         },
         {
           role: "user",
