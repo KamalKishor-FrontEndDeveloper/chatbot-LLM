@@ -1,21 +1,44 @@
-import axios from 'axios';
-import { HealthcareApiResponse, HealthcareTreatment } from '@shared/schema';
+import { HealthcareTreatment } from '@shared/schema';
 
 export class HealthcareApiService {
   private readonly apiUrl = 'https://pmsapi.healthlantern.com/api/get_tree_list_for_treatment_chatboard/1a26495729bbc804007b72e98803cab4';
 
   async getAllTreatments(): Promise<HealthcareTreatment[]> {
     try {
-      const response = await axios.get(this.apiUrl);
-      const data: HealthcareApiResponse = response.data;
+      const response = await fetch(this.apiUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'HealthLantern-ChatBot/1.0'
+        }
+      });
       
-      if (data.statusCode === 200 && data.data.success) {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Check if response has the expected structure from your API
+      if (data && data.statusCode === 200 && data.data && data.data.success && data.data.data) {
         return data.data.data;
       }
       
-      throw new Error('Failed to fetch treatments from healthcare API');
+      // If the structure is slightly different, try alternative parsing
+      if (data && Array.isArray(data)) {
+        return data;
+      }
+      
+      if (data && data.data && Array.isArray(data.data)) {
+        return data.data;
+      }
+      
+      throw new Error('API response format is not as expected');
     } catch (error) {
-      console.error('Healthcare API Error:', error);
+      console.error('Healthcare API Error details:', {
+        message: error.message,
+        stack: error.stack
+      });
       throw new Error('Unable to fetch treatment data at this time');
     }
   }
