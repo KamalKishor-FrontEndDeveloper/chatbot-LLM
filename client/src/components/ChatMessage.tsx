@@ -38,7 +38,6 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
           <div className="prose prose-sm max-w-none text-foreground">
             <ReactMarkdown 
               remarkPlugins={[remarkGfm]}
-              className="markdown-content"
               components={{
                 p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
                 strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
