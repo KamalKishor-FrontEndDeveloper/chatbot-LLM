@@ -157,6 +157,8 @@ export class OpenAIService {
         return await healthcareApi.searchTreatments(userMessage);
       
       case 'doctor_inquiry':
+        // For doctor queries, search for treatments to find relevant doctors
+        return await healthcareApi.searchTreatments(userMessage);
       case 'appointment_booking':
       case 'clinic_info':
         // These intents don't need treatment data
@@ -248,13 +250,21 @@ export class OpenAIService {
 
   private async handleDoctorInquiry(userMessage: string, treatments: HealthcareTreatment[]): Promise<string> {
     try {
-      // Get all doctors or specific doctors based on treatments
+      // Check if user is asking about specific treatment/service
+      const isSpecificServiceQuery = userMessage.toLowerCase().includes('perform') || 
+                                   userMessage.toLowerCase().includes('who does') ||
+                                   userMessage.toLowerCase().includes('specialists');
+      
       let doctors;
-      if (treatments.length > 0) {
+      if (treatments.length > 0 && isSpecificServiceQuery) {
         // Get doctors for specific treatments
         const doctorIds = treatments.flatMap(t => healthcareApi.getDoctorIds(t));
         const uniqueDoctorIds = Array.from(new Set(doctorIds));
         doctors = await healthcareApi.getDoctorsByIds(uniqueDoctorIds);
+        
+        if (doctors.length === 0) {
+          return `I couldn't find any doctors available for the specific treatments you mentioned. However, here are our general practitioners who can help evaluate and refer you to specialists if needed.\n\nPlease contact our clinic at **9654122458** for more specific doctor availability.`;
+        }
       } else {
         // Get all available doctors
         doctors = await healthcareApi.getAllDoctors();
@@ -264,13 +274,27 @@ export class OpenAIService {
         return "I'm sorry, I couldn't find any doctors available at the moment. Please contact our clinic directly for doctor availability.";
       }
 
-      let response = "Here are the available doctors:\n\n";
-      doctors.forEach((doctor, index) => {
-        response += `${index + 1}. **Dr. ${doctor.name}** - ${doctor.specialization}\n`;
-        response += `   Status: ${doctor.is_available ? '✅ Available' : '❌ Not Available'}\n\n`;
+      // Clean up doctor names and filter out non-medical staff for specific queries
+      const filteredDoctors = isSpecificServiceQuery 
+        ? doctors.filter(d => d.specialization === 'doctor' || d.specialization.toLowerCase().includes('specialist'))
+        : doctors;
+
+      let response = isSpecificServiceQuery 
+        ? `Here are the doctors who can help with your specific treatment:\n\n`
+        : `Here are our available doctors:\n\n`;
+        
+      filteredDoctors.forEach((doctor, index) => {
+        const cleanName = doctor.name.replace(/^Dr\.\s*/, '');
+        const specialization = doctor.specialization === 'doctor' ? 'Medical Doctor' : 
+                              doctor.specialization === 'front-desk' ? 'Administrative Staff' :
+                              doctor.specialization.charAt(0).toUpperCase() + doctor.specialization.slice(1);
+        
+        response += `**${index + 1}. Dr. ${cleanName}**\n`;
+        response += `   *Specialization:* ${specialization}\n`;
+        response += `   *Status:* ${doctor.is_available ? '🟢 Available' : '🔴 Not Available'}\n\n`;
       });
 
-      response += "Would you like to book an appointment with any of these doctors? Just let me know!";
+      response += `💡 *To book an appointment, just let me know which doctor you'd prefer!*`;
       return response;
     } catch (error) {
       console.error('Doctor inquiry error:', error);
@@ -279,20 +303,26 @@ export class OpenAIService {
   }
 
   private async handleAppointmentBooking(userMessage: string): Promise<string> {
-    return `I'd be happy to help you book an appointment! To proceed, I'll need the following information:
+    return `# 📅 Appointment Booking
 
-📋 **Required Details:**
-• Your full name
-• Email address  
-• Phone number
-• Preferred date (YYYY-MM-DD format)
-• Type of service/consultation needed
-• Any specific message or concerns
+I'd be happy to help you book an appointment! To proceed, I'll need the following information:
 
-🏥 **Example:**
-"Book appointment for John Doe, email: john@email.com, phone: 9876543210, date: 2025-09-15, service: General Consultation, message: Regular checkup"
+## 📋 Required Details
 
-Please provide these details and I'll book your appointment right away! Our clinic is located at the address available in our clinic information.`;
+- **Full Name:** Your complete name
+- **Email Address:** For appointment confirmation
+- **Phone Number:** Contact number  
+- **Preferred Date:** In YYYY-MM-DD format
+- **Service Type:** Type of consultation needed
+- **Message:** Any specific concerns or notes *(optional)*
+
+## 🏥 Example Format
+
+*"Book appointment for John Doe, email: john@email.com, phone: 9876543210, date: 2025-09-15, service: General Consultation, message: Regular checkup"*
+
+---
+
+💡 **Please provide these details and I'll book your appointment right away!** Our clinic contact information is available if you need it.`;
   }
 
   private async handleClinicInfo(userMessage: string): Promise<string> {
@@ -303,33 +333,36 @@ Please provide these details and I'll book your appointment right away! Our clin
         return "I'm sorry, I couldn't retrieve clinic information at the moment. Please contact us directly for details.";
       }
 
-      let response = `🏥 **${clinicInfo.name}**\n\n`;
-      
-      if (clinicInfo.address) {
-        response += `📍 **Address:** ${clinicInfo.address}\n\n`;
-      }
+      let response = `# 🏥 ${clinicInfo.name}\n\n`;
       
       if (clinicInfo.phone) {
-        response += `📞 **Phone:** ${clinicInfo.phone}\n\n`;
+        response += `## 📞 Contact Information\n`;
+        response += `**Phone:** ${clinicInfo.phone}\n\n`;
       }
       
       if (clinicInfo.email) {
-        response += `📧 **Email:** ${clinicInfo.email}\n\n`;
+        response += `**Email:** ${clinicInfo.email}\n\n`;
+      }
+      
+      if (clinicInfo.address) {
+        response += `## 📍 Location\n`;
+        response += `${clinicInfo.address}\n\n`;
       }
       
       if (clinicInfo.working_hours) {
-        response += `🕒 **Working Hours:** ${clinicInfo.working_hours}\n\n`;
+        response += `## 🕒 Working Hours\n`;
+        response += `${clinicInfo.working_hours}\n\n`;
       }
       
       if (clinicInfo.services && clinicInfo.services.length > 0) {
-        response += `🩺 **Services Offered:**\n`;
+        response += `## 🩺 Services Offered\n`;
         clinicInfo.services.forEach(service => {
-          response += `• ${service}\n`;
+          response += `- ${service}\n`;
         });
         response += '\n';
       }
 
-      response += "Feel free to contact us or book an appointment anytime!";
+      response += `---\n\n💡 **Ready to get started?** Feel free to contact us or ask me to book an appointment!`;
       return response;
     } catch (error) {
       console.error('Clinic info error:', error);

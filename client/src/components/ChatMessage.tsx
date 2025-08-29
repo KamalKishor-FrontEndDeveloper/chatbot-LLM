@@ -1,6 +1,8 @@
 import { ChatMessage } from '@/types/chat';
 import TreatmentCard from './TreatmentCard';
 import { cn } from '@/lib/utils';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface ChatMessageProps {
   message: ChatMessage;
@@ -33,8 +35,24 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
       </div>
       <div className="flex-1 max-w-2xl">
         <div className="bg-card border border-border rounded-2xl rounded-tl-md px-4 py-3 shadow-sm">
-          <div className="prose prose-sm max-w-none">
-            <p className="text-foreground mb-3">{message.content}</p>
+          <div className="prose prose-sm max-w-none text-foreground">
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm]}
+              className="markdown-content"
+              components={{
+                p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+                strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+                em: ({ children }) => <em className="italic text-muted-foreground">{children}</em>,
+                ul: ({ children }) => <ul className="list-disc pl-6 mb-3">{children}</ul>,
+                ol: ({ children }) => <ol className="list-decimal pl-6 mb-3">{children}</ol>,
+                li: ({ children }) => <li className="mb-1">{children}</li>,
+                h1: ({ children }) => <h1 className="text-xl font-bold mb-3">{children}</h1>,
+                h2: ({ children }) => <h2 className="text-lg font-semibold mb-2">{children}</h2>,
+                h3: ({ children }) => <h3 className="text-base font-medium mb-2">{children}</h3>,
+              }}
+            >
+              {message.content}
+            </ReactMarkdown>
             
             {/* Treatment Cards */}
             {message.treatments && message.treatments.length > 0 && (
