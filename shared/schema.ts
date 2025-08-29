@@ -54,6 +54,42 @@ export const HealthcareApiResponseSchema = z.object({
 export type HealthcareTreatment = z.infer<typeof HealthcareTreatmentSchema>;
 export type HealthcareApiResponse = z.infer<typeof HealthcareApiResponseSchema>;
 
+// Doctor types
+export const DoctorSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  specialization: z.string().optional(),
+  is_available: z.boolean().optional(),
+});
+
+export type Doctor = z.infer<typeof DoctorSchema>;
+
+// Clinic info types
+export const ClinicInfoSchema = z.object({
+  name: z.string(),
+  address: z.string().optional(),
+  phone: z.string().optional(),
+  email: z.string().optional(),
+  working_hours: z.string().optional(),
+  services: z.array(z.string()).optional(),
+});
+
+export type ClinicInfo = z.infer<typeof ClinicInfoSchema>;
+
+// Appointment booking types
+export const AppointmentBookingSchema = z.object({
+  name: z.string(),
+  email: z.string(),
+  phone: z.string(),
+  date: z.string(),
+  service: z.string(),
+  clinic_location_id: z.number().optional(),
+  message: z.string().optional(),
+  app_source: z.string().optional(),
+});
+
+export type AppointmentBooking = z.infer<typeof AppointmentBookingSchema>;
+
 // Chat message types
 export const ChatMessageSchema = z.object({
   id: z.string(),
@@ -61,6 +97,9 @@ export const ChatMessageSchema = z.object({
   content: z.string(),
   timestamp: z.string(),
   treatments: z.array(HealthcareTreatmentSchema).optional(),
+  doctors: z.array(DoctorSchema).optional(),
+  clinic_info: ClinicInfoSchema.optional(),
+  intent: z.string().optional(),
 });
 
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;

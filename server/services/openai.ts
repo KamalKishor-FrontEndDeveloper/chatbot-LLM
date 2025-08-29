@@ -33,14 +33,24 @@ export class OpenAIService {
       // Generate a contextual response
       const response = await this.generateResponse(userMessage, treatments, intent);
       
-      // For price inquiries with no results, don't return unrelated treatments
-      const priceLimit = this.extractPriceLimit(userMessage);
-      const isSpecificPriceQuery = intent === 'cost_inquiry' && priceLimit !== null;
-      const shouldShowTreatments = (isSpecificPriceQuery && treatments.length === 0) ? false : treatments.length > 0;
+      // For specific queries, only show the specific treatment requested
+      const isSpecificQuery = this.isSpecificCostQuery(userMessage) || intent === 'specific_treatment';
+      
+      let finalTreatments: HealthcareTreatment[] | undefined;
+      if (isSpecificQuery) {
+        // For specific queries, only return the exact match, no related treatments
+        finalTreatments = treatments.length > 0 ? [treatments[0]] : undefined;
+      } else {
+        // For general queries, return multiple treatments as before
+        const priceLimit = this.extractPriceLimit(userMessage);
+        const isSpecificPriceQuery = intent === 'cost_inquiry' && priceLimit !== null;
+        const shouldShowTreatments = (isSpecificPriceQuery && treatments.length === 0) ? false : treatments.length > 0;
+        finalTreatments = shouldShowTreatments ? treatments : undefined;
+      }
       
       return {
         message: response,
-        treatments: shouldShowTreatments ? treatments : undefined,
+        treatments: finalTreatments,
         intent,
       };
     } catch (error) {
@@ -80,10 +90,11 @@ export class OpenAIService {
           Healthcare intents (ONLY for medical/health questions):
           - "cost_inquiry" - asking about medical treatment costs/prices
           - "treatment_list" - wanting to see available medical treatments
-          - "doctor_inquiry" - asking about doctors or medical consultations
+          - "doctor_inquiry" - asking about doctors or doctor availability
           - "specific_treatment" - asking about a specific medical treatment
           - "comparison" - comparing medical treatments or services
-          - "consultation" - wanting to book medical consultation
+          - "appointment_booking" - wanting to book an appointment or consultation
+          - "clinic_info" - asking about clinic details, address, hours, services
           - "general_info" - general healthcare/medical questions
           - "other" - other healthcare related topics
           
@@ -95,7 +106,10 @@ export class OpenAIService {
           - "Who won the World Cup?" -> {"intent": "off_topic"}
           - "What's the weather today?" -> {"intent": "off_topic"}
           - "Cost of dental treatment?" -> {"intent": "cost_inquiry"}
-          - "Show me heart treatments" -> {"intent": "treatment_list"}`
+          - "Show me heart treatments" -> {"intent": "treatment_list"}
+          - "Which doctors are available?" -> {"intent": "doctor_inquiry"}
+          - "Book an appointment" -> {"intent": "appointment_booking"}
+          - "What is your clinic address?" -> {"intent": "clinic_info"}`
         },
         {
           role: "user",
@@ -119,6 +133,11 @@ export class OpenAIService {
   private async getRelevantTreatments(userMessage: string, intent: string): Promise<HealthcareTreatment[]> {
     switch (intent) {
       case 'cost_inquiry':
+        // For specific cost questions, return only the specific treatment
+        if (this.isSpecificCostQuery(userMessage)) {
+          const specificTreatment = await healthcareApi.getSpecificTreatment(userMessage);
+          return specificTreatment ? [specificTreatment] : [];
+        }
         // Check if user specified a price range
         const priceLimit = this.extractPriceLimit(userMessage);
         if (priceLimit !== null) {
@@ -130,12 +149,31 @@ export class OpenAIService {
         return await healthcareApi.getAllTreatments();
       
       case 'specific_treatment':
+        // For specific treatment queries, return only the specific treatment
+        const specificTreatment = await healthcareApi.getSpecificTreatment(userMessage);
+        return specificTreatment ? [specificTreatment] : [];
+      
       case 'comparison':
         return await healthcareApi.searchTreatments(userMessage);
+      
+      case 'doctor_inquiry':
+      case 'appointment_booking':
+      case 'clinic_info':
+        // These intents don't need treatment data
+        return [];
       
       default:
         return await healthcareApi.searchTreatments(userMessage);
     }
+  }
+
+  private isSpecificCostQuery(message: string): boolean {
+    const specificIndicators = [
+      'cost of', 'price of', 'how much is', 'what is the cost',
+      'what does it cost', 'price for', 'cost for'
+    ];
+    const lowerMessage = message.toLowerCase();
+    return specificIndicators.some(indicator => lowerMessage.includes(indicator));
   }
 
   private extractPriceLimit(message: string): number | null {
@@ -192,6 +230,118 @@ export class OpenAIService {
     treatments: HealthcareTreatment[], 
     intent: string
   ): Promise<string> {
+    // Handle different intents with specific API calls
+    switch (intent) {
+      case 'doctor_inquiry':
+        return await this.handleDoctorInquiry(userMessage, treatments);
+      
+      case 'appointment_booking':
+        return await this.handleAppointmentBooking(userMessage);
+      
+      case 'clinic_info':
+        return await this.handleClinicInfo(userMessage);
+      
+      default:
+        return await this.handleTreatmentResponse(userMessage, treatments, intent);
+    }
+  }
+
+  private async handleDoctorInquiry(userMessage: string, treatments: HealthcareTreatment[]): Promise<string> {
+    try {
+      // Get all doctors or specific doctors based on treatments
+      let doctors;
+      if (treatments.length > 0) {
+        // Get doctors for specific treatments
+        const doctorIds = treatments.flatMap(t => healthcareApi.getDoctorIds(t));
+        const uniqueDoctorIds = Array.from(new Set(doctorIds));
+        doctors = await healthcareApi.getDoctorsByIds(uniqueDoctorIds);
+      } else {
+        // Get all available doctors
+        doctors = await healthcareApi.getAllDoctors();
+      }
+
+      if (doctors.length === 0) {
+        return "I'm sorry, I couldn't find any doctors available at the moment. Please contact our clinic directly for doctor availability.";
+      }
+
+      let response = "Here are the available doctors:\n\n";
+      doctors.forEach((doctor, index) => {
+        response += `${index + 1}. **Dr. ${doctor.name}** - ${doctor.specialization}\n`;
+        response += `   Status: ${doctor.is_available ? '✅ Available' : '❌ Not Available'}\n\n`;
+      });
+
+      response += "Would you like to book an appointment with any of these doctors? Just let me know!";
+      return response;
+    } catch (error) {
+      console.error('Doctor inquiry error:', error);
+      return "I'm having trouble accessing doctor information right now. Please try again later or contact our clinic directly.";
+    }
+  }
+
+  private async handleAppointmentBooking(userMessage: string): Promise<string> {
+    return `I'd be happy to help you book an appointment! To proceed, I'll need the following information:
+
+📋 **Required Details:**
+• Your full name
+• Email address  
+• Phone number
+• Preferred date (YYYY-MM-DD format)
+• Type of service/consultation needed
+• Any specific message or concerns
+
+🏥 **Example:**
+"Book appointment for John Doe, email: john@email.com, phone: 9876543210, date: 2025-09-15, service: General Consultation, message: Regular checkup"
+
+Please provide these details and I'll book your appointment right away! Our clinic is located at the address available in our clinic information.`;
+  }
+
+  private async handleClinicInfo(userMessage: string): Promise<string> {
+    try {
+      const clinicInfo = await healthcareApi.getClinicInfo();
+      
+      if (!clinicInfo) {
+        return "I'm sorry, I couldn't retrieve clinic information at the moment. Please contact us directly for details.";
+      }
+
+      let response = `🏥 **${clinicInfo.name}**\n\n`;
+      
+      if (clinicInfo.address) {
+        response += `📍 **Address:** ${clinicInfo.address}\n\n`;
+      }
+      
+      if (clinicInfo.phone) {
+        response += `📞 **Phone:** ${clinicInfo.phone}\n\n`;
+      }
+      
+      if (clinicInfo.email) {
+        response += `📧 **Email:** ${clinicInfo.email}\n\n`;
+      }
+      
+      if (clinicInfo.working_hours) {
+        response += `🕒 **Working Hours:** ${clinicInfo.working_hours}\n\n`;
+      }
+      
+      if (clinicInfo.services && clinicInfo.services.length > 0) {
+        response += `🩺 **Services Offered:**\n`;
+        clinicInfo.services.forEach(service => {
+          response += `• ${service}\n`;
+        });
+        response += '\n';
+      }
+
+      response += "Feel free to contact us or book an appointment anytime!";
+      return response;
+    } catch (error) {
+      console.error('Clinic info error:', error);
+      return "I'm having trouble accessing clinic information right now. Please try again later.";
+    }
+  }
+
+  private async handleTreatmentResponse(
+    userMessage: string, 
+    treatments: HealthcareTreatment[], 
+    intent: string
+  ): Promise<string> {
     // Check if this is a price inquiry with specific criteria
     const priceLimit = this.extractPriceLimit(userMessage);
     const isSpecificPriceQuery = intent === 'cost_inquiry' && priceLimit !== null;
@@ -219,7 +369,6 @@ export class OpenAIService {
           - If treatments are provided, reference them in your response
           - For cost inquiries with no results, suggest the closest available options or alternative budget ranges
           - For treatment lists, summarize what's available in an organized way
-          - For doctor inquiries, mention doctor availability from the data
           - Always encourage users to consult with healthcare professionals for medical advice
           - Keep responses concise but informative and well-formatted
           - Use a warm, helpful tone
