@@ -1,0 +1,179 @@
+https://pmsapi.healthlantern.com/api/get_tree_list_for_treatment_chatboard/1a26495729bbc804007b72e98803cab4
+
+
+I have this APi whicch having the data response below
+
+{
+  "statusCode": 200,
+  "data": {
+    "success": true,
+    "data": [
+      {
+        "id": 1,
+        "parent_id": 0,
+        "price": "",
+        "doctors": "[19068,19069,19180]",
+        "t_name": "Hairfall",
+        "name": "Hairfall (C)",
+        "children": [
+          {
+            "id": 2,
+            "t_name": "Hairfall in Men",
+            "parent_id": 1,
+            "price": "",
+            "doctors": "[19420,19451,19457]",
+            "name": "Hairfall in Men (C)"
+          },
+          {
+            "id": 3,
+            "t_name": "Hairfall in Women",
+            "parent_id": 1,
+            "price": "",
+            "doctors": "[19451,19457]",
+            "name": "Hairfall in Women (C)"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "parent_id": 0,
+        "price": "",
+        "doctors": "[19068,19180]",
+        "t_name": "Hairfall Treatment",
+        "name": "Hairfall Treatment (T)",
+        "children": [
+          {
+            "id": 5,
+            "t_name": "PRP",
+            "parent_id": 4,
+            "price": "",
+            "doctors": "[19525]",
+            "name": "PRP (T)"
+          },
+          {
+            "id": 6,
+            "t_name": "Hair Transplant",
+            "parent_id": 4,
+            "price": "",
+            "doctors": "[19451,19457]",
+            "name": "Hair Transplant (T)"
+          },
+          {
+            "id": 20,
+            "t_name": "Hair Laser",
+            "parent_id": 4,
+            "price": "4500",
+            "doctors": "[19525]",
+            "name": "Hair Laser (T)"
+          },
+          {
+            "id": 21,
+            "t_name": "Hair transplant",
+            "parent_id": 4,
+            "price": "4600",
+            "doctors": "[19420]",
+            "name": "Hair transplant (T)"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "parent_id": 0,
+        "price": "",
+        "doctors": "[19525]",
+        "t_name": "Skin & Facial Treatment",
+        "name": "Skin & Facial Treatment (T)",
+        "children": [
+          {
+            "id": 8,
+            "t_name": "Laser Resurfacing",
+            "parent_id": 7,
+            "price": "",
+            "doctors": "[19525]",
+            "name": "Laser Resurfacing (T)"
+          },
+          {
+            "id": 9,
+            "t_name": "Chemical Peels",
+            "parent_id": 7,
+            "price": "",
+            "doctors": "[19525]",
+            "name": "Chemical Peels (T)"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "parent_id": 0,
+        "price": "",
+        "doctors": "[19525]",
+        "t_name": "Skin Concern",
+        "name": "Skin Concern (C)",
+        "children": [
+          {
+            "id": 11,
+            "t_name": "Acne",
+            "parent_id": 10,
+            "price": "",
+            "doctors": "[19525]",
+            "name": "Acne (C)"
+          },
+          {
+            "id": 12,
+            "t_name": "Rosacea",
+            "parent_id": 10,
+            "price": "",
+            "doctors": "[19068,19069]",
+            "name": "Rosacea (C)"
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "parent_id": 0,
+        "price": "",
+        "doctors": "[19068,19180]",
+        "t_name": "Plastic Surgery",
+        "name": "Plastic Surgery (T)",
+        "children": [
+          {
+            "id": 14,
+            "t_name": "Nose Reshaping",
+            "parent_id": 13,
+            "price": "",
+            "doctors": "[19457]",
+            "name": "Nose Reshaping (T)"
+          },
+          {
+            "id": 15,
+            "t_name": "Face Lift",
+            "parent_id": 13,
+            "price": "",
+            "doctors": "[19451]",
+            "name": "Face Lift (T)"
+          }
+        ]
+      },
+      {
+        "id": 16,
+        "parent_id": 0,
+        "price": "100",
+        "doctors": "[19128,19451,19452,19453,19454,19455,19457]",
+        "t_name": "treatmet",
+        "name": "treatmet (T)",
+        "children": []
+      },
+
+....}
+
+Now I want to use this API in the openAI LLM where user can ask real time question like 
+
+What is the cost of facelift ?
+
+Provide me treatment list or provide me consultation services 
+
+What are LHR all services?
+  
+
+Like these kind of questions where LLM can handle this real time how to achive thisin the openAI block in the Typebot
+
