@@ -3,6 +3,7 @@ import { ChatMessage } from '@/types/chat';
 import ChatMessageComponent from './ChatMessage';
 import ChatInput from './ChatInput';
 import SuggestedQuery from './SuggestedQuery';
+import ThinkingIndicator from './ThinkingIndicator';
 import { useMutation } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -163,24 +164,8 @@ export default function ChatInterface() {
             />
           ))}
           
-          {/* Loading Message */}
-          {isLoading && (
-            <div className="flex items-start space-x-3" data-testid="loading-message">
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center flex-shrink-0 mt-1">
-                <i className="fas fa-robot text-primary-foreground text-sm"></i>
-              </div>
-              <div className="bg-card border border-border rounded-2xl rounded-tl-md px-4 py-3 shadow-sm">
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm text-muted-foreground">AI is thinking</span>
-                  <div className="typing-indicator">
-                    <div className="typing-dot"></div>
-                    <div className="typing-dot"></div>
-                    <div className="typing-dot"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Enhanced Loading Message */}
+          {isLoading && <ThinkingIndicator />}
         </div>
       </main>
 

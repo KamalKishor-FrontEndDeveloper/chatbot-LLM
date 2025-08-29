@@ -19,6 +19,14 @@ export class OpenAIService {
       // First, analyze the user's intent
       const intent = await this.analyzeIntent(userMessage);
       
+      // Handle off-topic questions with guard rails
+      if (intent === 'off_topic') {
+        return {
+          message: "I'm HealthLantern AI, your healthcare assistant. I'm here to help you with medical treatments, costs, doctor availability, and health-related questions.\n\nI can help you with:\n• Treatment information and pricing\n• Doctor availability and specializations\n• Healthcare consultations\n• Medical conditions and their treatments\n\nWhat healthcare question can I assist you with today?",
+          intent: 'off_topic',
+        };
+      }
+      
       // Get relevant treatments based on the query
       const treatments = await this.getRelevantTreatments(userMessage, intent);
       
@@ -45,23 +53,49 @@ export class OpenAIService {
   }
 
   private async analyzeIntent(userMessage: string): Promise<string> {
+    // First, check for obvious off-topic keywords
+    const offTopicKeywords = [
+      'capital', 'country', 'geography', 'sports', 'weather', 'politics', 
+      'entertainment', 'movie', 'celebrity', 'music', 'technology', 'programming',
+      'travel', 'food recipe', 'cooking', 'history', 'science fiction', 'math problem'
+    ];
+    
+    const lowerMessage = userMessage.toLowerCase();
+    const hasOffTopicKeywords = offTopicKeywords.some(keyword => lowerMessage.includes(keyword));
+    
+    if (hasOffTopicKeywords) {
+      console.log(`Off-topic detected via keywords: "${userMessage}"`);
+      return 'off_topic';
+    }
+
     const response = await openai.chat.completions.create({
       model: "gpt-5",
       messages: [
         {
           role: "system",
-          content: `You are a healthcare intent analyzer. Analyze the user's message and determine their intent. 
+          content: `You are a strict healthcare intent classifier. Be very careful to classify non-medical questions as "off_topic".
+          
           Respond with JSON in this format: {"intent": "category"}
           
-          Possible intents:
-          - "cost_inquiry" - asking about treatment costs/prices
-          - "treatment_list" - wanting to see available treatments
-          - "doctor_inquiry" - asking about doctors or doctor availability
-          - "specific_treatment" - asking about a specific treatment
-          - "comparison" - comparing treatments or services
-          - "consultation" - wanting to book consultation or get consultation info
-          - "general_info" - general healthcare questions
-          - "other" - anything else`
+          Healthcare intents (ONLY for medical/health questions):
+          - "cost_inquiry" - asking about medical treatment costs/prices
+          - "treatment_list" - wanting to see available medical treatments
+          - "doctor_inquiry" - asking about doctors or medical consultations
+          - "specific_treatment" - asking about a specific medical treatment
+          - "comparison" - comparing medical treatments or services
+          - "consultation" - wanting to book medical consultation
+          - "general_info" - general healthcare/medical questions
+          - "other" - other healthcare related topics
+          
+          NON-healthcare intent (use for ALL non-medical questions):
+          - "off_topic" - geography, capitals, sports, entertainment, technology, politics, weather, general knowledge, cooking, travel, or ANY non-medical topic
+          
+          Examples:
+          - "What is the capital of India?" -> {"intent": "off_topic"}
+          - "Who won the World Cup?" -> {"intent": "off_topic"}
+          - "What's the weather today?" -> {"intent": "off_topic"}
+          - "Cost of dental treatment?" -> {"intent": "cost_inquiry"}
+          - "Show me heart treatments" -> {"intent": "treatment_list"}`
         },
         {
           role: "user",
@@ -73,8 +107,11 @@ export class OpenAIService {
 
     try {
       const result = JSON.parse(response.choices[0].message.content || '{"intent": "other"}');
-      return result.intent || 'other';
+      const intent = result.intent || 'other';
+      console.log(`Intent analysis for "${userMessage}": ${intent}`);
+      return intent;
     } catch {
+      console.log(`Intent analysis failed for "${userMessage}", defaulting to other`);
       return 'other';
     }
   }
