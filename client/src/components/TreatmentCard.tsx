@@ -13,7 +13,7 @@ interface Doctor {
 }
 
 export default function TreatmentCard({ treatment }: TreatmentCardProps) {
-  const [doctorNames, setDoctorNames] = useState<string[]>([]);
+  const [fetchedDoctorNames, setFetchedDoctorNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Helper function to get doctor IDs from comma-separated string
@@ -23,24 +23,6 @@ export default function TreatmentCard({ treatment }: TreatmentCardProps) {
     return doctorIds;
   };
 
-  const getDoctorNames = (doctorsString: string): string[] => {
-    if (!doctorsString || doctorsString.trim() === '') return [];
-
-    // Handle both comma-separated names and IDs
-    const doctors = doctorsString.split(',').map(doctor => doctor.trim()).filter(doctor => doctor !== '');
-
-    // If they look like names (contain spaces or start with "Dr"), return as is
-    // Otherwise, treat as IDs and format them
-    return doctors.map(doctor => {
-      if (doctor.includes(' ') || doctor.startsWith('Dr')) {
-        return doctor;
-      }
-      // If it's just an ID, format it nicely
-      return `Dr. ${doctor}`;
-    });
-  };
-
-  const doctorNames = getDoctorNames(treatment.doctors);
   const doctorCount = getDoctorIds(treatment.doctors).length;
 
   useEffect(() => {
@@ -61,7 +43,7 @@ export default function TreatmentCard({ treatment }: TreatmentCardProps) {
             const names = relevantDoctors.map(doctor => 
               doctor.name.replace(/^Dr\.\s*/, 'Dr. ')
             );
-            setDoctorNames(names);
+            setFetchedDoctorNames(names);
           }
         }
       } catch (error) {
@@ -121,9 +103,9 @@ export default function TreatmentCard({ treatment }: TreatmentCardProps) {
               <div className="text-xs text-muted-foreground mb-1">Available Doctors:</div>
               {loading ? (
                 <div className="text-xs text-muted-foreground">Loading doctors...</div>
-              ) : doctorNames.length > 0 ? (
+              ) : fetchedDoctorNames.length > 0 ? (
                 <div className="flex flex-wrap gap-1">
-                  {doctorNames.map((name, index) => (
+                  {fetchedDoctorNames.map((name, index) => (
                     <span 
                       key={index}
                       className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full"
