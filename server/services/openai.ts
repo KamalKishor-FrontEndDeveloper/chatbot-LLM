@@ -2,6 +2,17 @@ import OpenAI from 'openai';
 import { HealthcareTreatment } from '@shared/schema';
 import { healthcareApi } from './healthcare-api';
 
+interface AppointmentBooking {
+  name: string;
+  email: string;
+  phone: string;
+  date: string;
+  service: string;
+  message: string;
+  clinic_location_id: number;
+  app_source: string;
+}
+
 // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || "",
@@ -601,6 +612,7 @@ I'd be happy to help you book an appointment! To proceed, I'll need the followin
         return response;
       }
     }
+
     // Check if this is a price inquiry with specific criteria
     const priceLimit = this.extractPriceLimit(userMessage);
     const isSpecificPriceQuery = intent === 'cost_inquiry' && priceLimit !== null;
@@ -614,12 +626,8 @@ I'd be happy to help you book an appointment! To proceed, I'll need the followin
       treatmentContext = 'No specific treatments found.';
     }
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-5",
-      messages: [
-        {
-          role: "system",
-          content: `You are HealthLantern AI, a helpful healthcare assistant. You have access to treatment data from a healthcare system.
+    // Special handling for greetings and off-topic messages
+    let systemContent = `You are HealthLantern AI, a helpful healthcare assistant. You have access to treatment data from a healthcare system.
 
           Guidelines:
           - Be professional, empathetic, and informative
@@ -644,23 +652,8 @@ I'd be happy to help you book an appointment! To proceed, I'll need the followin
 
           ${treatmentContext}`;
 
-    // Special handling for greetings and off-topic messages
     if (intent === 'off_topic' && (userMessage.toLowerCase().includes('hi') || userMessage.toLowerCase().includes('hello') || userMessage.toLowerCase().includes('hey'))) {
-      const systemMessage = `You are HealthLantern AI, a helpful healthcare assistant. You have access to treatment data from a healthcare system.
-
-          Guidelines:
-          - Be professional, empathetic, and informative
-          - Use proper Markdown formatting with clear line breaks and bullet points when listing information
-          - For greetings and introductions, use proper paragraph breaks and bullet points for lists
-          - If no treatments match specific price criteria, politely explain this and suggest alternatives (higher budget ranges)
-          - If treatments are provided, reference them in your response
-          - For cost inquiries with no results, suggest the closest available options or alternative budget ranges
-          - For treatment lists, summarize what's available in an organized way
-          - Always encourage users to consult with healthcare professionals for medical advice
-          - Keep responses concise but informative and well-formatted with proper line breaks
-          - Use a warm, helpful tone
-          - When suggesting alternatives, be specific about price ranges (e.g., "under ₹500" or "under ₹1000")
-          - For greeting messages, format your introduction properly with line breaks between sentences and use bullet points for capabilities
+      systemContent += `
 
           For greeting messages, respond with a warm welcome that includes:
           1. A friendly introduction stating you are HealthLantern AI
@@ -677,9 +670,7 @@ I'd be happy to help you book an appointment! To proceed, I'll need the followin
           • Healthcare consultations
           • Medical conditions and their treatments
 
-          What healthcare question can I assist you with today?
-
-          ${treatmentContext}`;
+          What healthcare question can I assist you with today?`;
     }
 
     const response = await openai.chat.completions.create({
@@ -687,30 +678,7 @@ I'd be happy to help you book an appointment! To proceed, I'll need the followin
       messages: [
         {
           role: "system",
-          content: `You are HealthLantern AI, a helpful healthcare assistant. You have access to treatment data from a healthcare system.
-
-          Guidelines:
-          - Be professional, empathetic, and informative
-          - Use proper Markdown formatting with clear line breaks and bullet points when listing information
-          - For greetings and introductions, use proper paragraph breaks and bullet points for lists
-          - If no treatments match specific price criteria, politely explain this and suggest alternatives (higher budget ranges)
-          - If treatments are provided, reference them in your response
-          - For cost inquiries with no results, suggest the closest available options or alternative budget ranges
-          - For treatment lists, summarize what's available in an organized way
-          - Always encourage users to consult with healthcare professionals for medical advice
-          - Keep responses concise but informative and well-formatted with proper line breaks
-          - Use a warm, helpful tone
-          - When suggesting alternatives, be specific about price ranges (e.g., "under ₹500" or "under ₹1000")
-          - For greeting messages, format your introduction properly with line breaks between sentences and use bullet points for capabilities
-
-          Treatment data format:
-          - id: unique identifier
-          - t_name: treatment name
-          - name: full name with category indicator (C) for condition, (T) for treatment
-          - price: cost (empty if not available)
-          - doctors: available doctors (can be IDs or names)
-
-          ${treatmentContext}`
+          content: systemContent
         },
         {
           role: "user",

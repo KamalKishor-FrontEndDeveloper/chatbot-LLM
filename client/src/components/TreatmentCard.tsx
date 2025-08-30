@@ -1,5 +1,6 @@
 import { HealthcareTreatment } from '@shared/schema';
 import { useState, useEffect } from 'react';
+import { Users } from 'lucide-react';
 
 interface TreatmentCardProps {
   treatment: HealthcareTreatment;
@@ -16,20 +17,43 @@ export default function TreatmentCard({ treatment }: TreatmentCardProps) {
   const [fetchedDoctorNames, setFetchedDoctorNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Helper function to get doctor IDs from comma-separated string
-  const getDoctorIds = (doctorsString: string): string[] => {
-    if (!doctorsString || doctorsString.trim() === '') return [];
-    const doctorIds = doctorsString.split(',').map(id => id.trim()).filter(id => id !== '');
-    return doctorIds;
+  // Helper function to get doctor IDs from comma-separated string or array
+  const getDoctorIds = (treatment: HealthcareTreatment): number[] => {
+    if (!treatment.doctors) return [];
+
+    if (Array.isArray(treatment.doctors)) {
+      // Ensure each item is treated as a potential ID (number or string that can be parsed)
+      return treatment.doctors
+        .map(d => typeof d === 'string' ? parseInt(d) : d)
+        .filter(id => !isNaN(id));
+    }
+
+    // Handle comma-separated string
+    if (typeof treatment.doctors === 'string') {
+      return treatment.doctors
+        .split(',')
+        .map(id => parseInt(id.trim()))
+        .filter(id => !isNaN(id));
+    }
+
+    return [];
   };
 
-  const doctorIds = getDoctorIds(treatment.doctors);
-  const doctorCount = doctorIds.length;
+  // Helper function to get doctor count
+  const getDoctorCount = (treatment: HealthcareTreatment): number => {
+    return getDoctorIds(treatment).length;
+  };
+
+  const doctorCount = getDoctorCount(treatment);
+  const treatmentDoctorIds = getDoctorIds(treatment);
 
   useEffect(() => {
     const fetchDoctorNames = async () => {
-      const doctorIds = getDoctorIds(treatment.doctors);
-      if (doctorIds.length === 0) return;
+      const doctorIds = getDoctorIds(treatment); // Use the unified getDoctorIds function
+      if (doctorIds.length === 0) {
+        setFetchedDoctorNames([]); // Ensure names are cleared if no doctors
+        return;
+      }
 
       setLoading(true);
       try {
@@ -45,17 +69,23 @@ export default function TreatmentCard({ treatment }: TreatmentCardProps) {
               doctor.name.replace(/^Dr\.\s*/, 'Dr. ')
             );
             setFetchedDoctorNames(names);
+          } else {
+             setFetchedDoctorNames([]); // Clear names if API returns no data or error
           }
+        } else {
+            console.error('Failed to fetch doctors:', response.statusText);
+            setFetchedDoctorNames([]); // Clear names on fetch error
         }
       } catch (error) {
         console.error('Error fetching doctor names:', error);
+        setFetchedDoctorNames([]); // Clear names on network error
       } finally {
         setLoading(false);
       }
     };
 
     fetchDoctorNames();
-  }, [treatment.doctors]);
+  }, [treatment.doctors]); // Dependency on treatment.doctors to refetch if it changes
 
   const isCondition = treatment.name.includes('(C)');
   const isTreatment = treatment.name.includes('(T)');
