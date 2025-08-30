@@ -168,11 +168,12 @@ export class HealthcareApiService {
       }
       
       const data = await response.json();
+      console.log('Clinic API Response:', JSON.stringify(data, null, 2));
       
       if (data && data.success === true && data.organization) {
         const orgData = data.organization;
         return {
-          name: orgData.org_name || 'HealthLantern Clinic',
+          name: orgData.org_name || orgData.name || orgData.organization_name || 'HealthLantern Medical Center',
           address: orgData.org_address || orgData.address,
           phone: orgData.org_pri_phone_no || orgData.phone,
           email: orgData.org_email || orgData.email,
