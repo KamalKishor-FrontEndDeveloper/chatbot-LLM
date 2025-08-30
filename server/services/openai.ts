@@ -444,27 +444,8 @@ Please try again or contact our clinic directly at **9654122458** for assistance
 I encountered an issue while booking your appointment. Please contact our clinic directly at **9654122458** for immediate assistance.`;
       }
     } else {
-      // Show booking form
-      return `# 📅 Appointment Booking
-
-I'd be happy to help you book an appointment! To proceed, I'll need the following information:
-
-## 📋 Required Details
-
-- **Full Name:** Your complete name
-- **Email Address:** For appointment confirmation
-- **Phone Number:** Contact number  
-- **Preferred Date:** In YYYY-MM-DD format
-- **Service Type:** Type of consultation needed
-- **Message:** Any specific concerns or notes *(optional)*
-
-## 🏥 Example Format
-
-*"Book appointment for John Doe, email: john@email.com, phone: 9876543210, date: 2025-01-25, service: Hair Transplant, message: Consultation for hair transplant"*
-
----
-
-💡 **Please provide these details and I'll book your appointment right away!** Our clinic contact information is available if you need it.`;
+      // Return special marker to show form
+      return "SHOW_APPOINTMENT_FORM";
     }
   }
 
