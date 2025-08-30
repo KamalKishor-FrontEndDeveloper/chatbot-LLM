@@ -94,6 +94,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get all doctors
+  app.get("/api/doctors", async (req, res) => {
+    try {
+      const doctors = await healthcareApi.getAllDoctors();
+      res.json({
+        success: true,
+        data: doctors
+      });
+    } catch (error) {
+      console.error("Doctors API Error:", error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to fetch doctors"
+      });
+    }
+  });
+
   // Book appointment
   app.post("/api/appointments/book", async (req, res) => {
     try {

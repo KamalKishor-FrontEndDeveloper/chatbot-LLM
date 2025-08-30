@@ -44,6 +44,9 @@ export class OpenAIService {
       if (isSpecificQuery) {
         // For specific queries, only return the exact match, no related treatments
         finalTreatments = treatments.length > 0 ? [treatments[0]] : undefined;
+      } else if (intent === 'treatment_selection') {
+        // For treatment selection, don't show treatment cards - user has already selected
+        finalTreatments = undefined;
       } else {
         // For general queries, return multiple treatments as before
         const priceLimit = this.extractPriceLimit(userMessage);
@@ -95,6 +98,16 @@ export class OpenAIService {
     if (hasAppointmentIntent) {
       console.log(`Appointment booking intent detected: "${userMessage}"`);
       return 'appointment_booking';
+    }
+
+    // Check if this is a simple treatment selection (single words like "Hairfall", "Hair Transplant")
+    const treatmentSelectionPattern = /^[a-zA-Z\s]{3,30}$/;
+    const commonTreatments = ['hairfall', 'hair transplant', 'dental', 'skin treatment', 'eye care'];
+    
+    if (treatmentSelectionPattern.test(userMessage) && 
+        commonTreatments.some(treatment => lowerMessage.includes(treatment.replace(/\s+/g, '')) || treatment.includes(lowerMessage))) {
+      console.log(`Treatment selection detected: "${userMessage}"`);
+      return 'treatment_selection';
     }
 
     const response = await openai.chat.completions.create({
@@ -183,6 +196,11 @@ export class OpenAIService {
         // These intents don't need treatment data
         return [];
       
+      case 'treatment_selection':
+        // User has selected a specific treatment, get details for booking context
+        const selectedTreatment = await healthcareApi.getSpecificTreatment(userMessage);
+        return selectedTreatment ? [selectedTreatment] : [];
+      
       default:
         return await healthcareApi.searchTreatments(userMessage);
     }
@@ -249,11 +267,26 @@ export class OpenAIService {
   private isFollowUpTreatmentQuery(message: string, treatments: HealthcareTreatment[]): boolean {
     const cleanMessage = message.trim().toLowerCase();
     
-    // Check if it's a short message that matches a treatment name
-    if (cleanMessage.length < 50 && treatments.length > 0) {
+    // Check if it's a short message that matches a treatment name exactly
+    if (cleanMessage.length < 50) {
+      // Common treatment names that indicate user selection
+      const commonTreatmentNames = [
+        'hairfall', 'hair transplant', 'dental', 'skin', 'eye', 'heart',
+        'hairfall in men', 'hairfall in women', 'hairfall treatment'
+      ];
+      
+      const isExactMatch = commonTreatmentNames.some(name => 
+        cleanMessage === name || cleanMessage === name.replace(/\s+/g, '')
+      );
+      
+      if (isExactMatch) {
+        return true;
+      }
+      
+      // Check against actual treatment names
       return treatments.some(treatment => {
         const treatmentName = treatment.t_name?.toLowerCase() || '';
-        return treatmentName.includes(cleanMessage) || cleanMessage.includes(treatmentName);
+        return treatmentName === cleanMessage || cleanMessage === treatmentName;
       });
     }
     
@@ -283,6 +316,9 @@ export class OpenAIService {
       
       case 'clinic_info':
         return await this.handleClinicInfo(userMessage);
+      
+      case 'treatment_selection':
+        return await this.handleTreatmentSelection(userMessage, treatments);
       
       default:
         return await this.handleTreatmentResponse(userMessage, treatments, intent);
@@ -436,6 +472,44 @@ I'd be happy to help you book an appointment! To proceed, I'll need the followin
     return { isComplete: false };
   }
 
+  private async handleTreatmentSelection(userMessage: string, treatments: HealthcareTreatment[]): Promise<string> {
+    if (treatments.length === 0) {
+      return "I couldn't find information about that specific treatment. Could you please be more specific or ask about available treatments?";
+    }
+
+    const treatment = treatments[0];
+    let response = `# ${treatment.t_name}\n\n`;
+    
+    // Get doctor details if available
+    const doctorIds = this.getDoctorIds(treatment);
+    if (doctorIds.length > 0) {
+      const doctors = await healthcareApi.getDoctorsByIds(doctorIds);
+      if (doctors.length > 0) {
+        response += `**Available Specialists:**\n`;
+        doctors.forEach((doctor, index) => {
+          const cleanName = doctor.name.replace(/^Dr\.\s*/, '');
+          response += `${index + 1}. **Dr. ${cleanName}** - ${doctor.is_available ? '🟢 Available' : '🔴 Not Available'}\n`;
+        });
+        response += '\n';
+      }
+    }
+    
+    response += `**Treatment Information:**\n`;
+    response += `- **Price:** ${treatment.price ? `₹${treatment.price}` : 'Contact for Quote'}\n`;
+    response += `- **Available Doctors:** ${this.getDoctorCount(treatment)}\n\n`;
+    
+    response += `---\n\n`;
+    response += `💡 **Ready to book your appointment?**\n\n`;
+    response += `To proceed with booking, I'll need:\n`;
+    response += `• Your full name\n`;
+    response += `• Email address\n`;
+    response += `• Phone number\n`;
+    response += `• Preferred date (YYYY-MM-DD)\n\n`;
+    response += `Just say "**book appointment**" or provide your details and I'll help you schedule your consultation!`;
+    
+    return response;
+  }
+
   private async handleClinicInfo(userMessage: string): Promise<string> {
     try {
       const clinicInfo = await healthcareApi.getClinicInfo();
@@ -497,30 +571,32 @@ I'd be happy to help you book an appointment! To proceed, I'll need the followin
       
       if (matchedTreatment) {
         let response = `# ${matchedTreatment.t_name}\n\n`;
-        response += `**Treatment Details:**\n`;
-        response += `- **Price:** ${matchedTreatment.price || 'Contact for Quote'}\n`;
-        response += `- **Available Doctors:** ${this.getDoctorCount(matchedTreatment)}\n\n`;
         
         // Get doctor details if available
         const doctorIds = this.getDoctorIds(matchedTreatment);
         if (doctorIds.length > 0) {
           const doctors = await healthcareApi.getDoctorsByIds(doctorIds);
           if (doctors.length > 0) {
-            response += `**Our Specialists:**\n`;
+            response += `**Available Specialists:**\n`;
             doctors.forEach((doctor, index) => {
               const cleanName = doctor.name.replace(/^Dr\.\s*/, '');
-              response += `${index + 1}. Dr. ${cleanName} - ${doctor.is_available ? '🟢 Available' : '🔴 Not Available'}\n`;
+              response += `${index + 1}. **Dr. ${cleanName}** - ${doctor.is_available ? '🟢 Available' : '🔴 Not Available'}\n`;
             });
             response += '\n';
           }
         }
         
+        response += `**Treatment Information:**\n`;
+        response += `- **Price:** ${matchedTreatment.price ? `₹${matchedTreatment.price}` : 'Contact for Quote'}\n`;
+        response += `- **Available Doctors:** ${this.getDoctorCount(matchedTreatment)}\n\n`;
+        
         response += `---\n\n`;
-        response += `💡 **Ready to book an appointment?** Just say "book appointment" or "I'm interested" and I'll guide you through the process!\n\n`;
-        response += `You can also ask me:\n`;
-        response += `• More details about this treatment\n`;
-        response += `• Compare with other treatments\n`;
-        response += `• Check doctor availability`;
+        response += `💡 **Ready to proceed?** I can help you:\n`;
+        response += `• **Book an appointment** - Just say "book appointment"\n`;
+        response += `• **Get more details** about this treatment\n`;
+        response += `• **Compare prices** with other treatments\n`;
+        response += `• **Check specific doctor availability**\n\n`;
+        response += `What would you like to do next?`;
         
         return response;
       }
