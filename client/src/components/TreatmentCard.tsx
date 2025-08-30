@@ -128,7 +128,7 @@ export default function TreatmentCard({ treatment }: TreatmentCardProps) {
                 </div>
               ) : (
                 <div className="text-xs text-muted-foreground">
-                  {getDoctorIds(treatment.doctors).length > 0 ? `Doctor IDs: ${getDoctorIds(treatment.doctors).join(', ')}` : 'No doctors available'}
+                  No doctors available
                 </div>
               )}
             </div>
