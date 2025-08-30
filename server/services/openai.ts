@@ -111,9 +111,25 @@ export class OpenAIService {
       return 'appointment_booking';
     }
 
-    // Check if this is a simple treatment selection (single words like "Hairfall", "Hair Transplant")
-    const treatmentSelectionPattern = /^[a-zA-Z\s]{3,30}$/;
-    const commonTreatments = ['hairfall', 'hair transplant', 'dental', 'skin treatment', 'eye care'];
+    // Check for specific patterns first
+    // Service list patterns - check first
+    const serviceListPatterns = [
+      'complete list of services', 'all services', 'list of services', 'show all services',
+      'what services do you offer', 'services available', 'all treatments available',
+      'complete treatment list', 'show all treatments', 'list all treatments'
+    ];
+
+    if (serviceListPatterns.some(pattern => lowerMessage.includes(pattern))) {
+      console.log(`Service list request detected: "${userMessage}"`);
+      return 'treatment_list';
+    }
+
+    // Treatment selection patterns
+    const treatmentSelectionPattern = /^(treatment\s*)?(\d+|one|two|three|four|five|six|seven|eight|nine|ten|first|second|third|fourth|fifth)$/i;
+    const commonTreatments = [
+      'acne', 'laser hair removal', 'botox', 'fillers', 'prp', 'hydrafacial', 
+      'chemical peel', 'microneedling', 'body contouring', 'stretch marks'
+    ];
 
     if (treatmentSelectionPattern.test(userMessage) && 
         commonTreatments.some(treatment => lowerMessage.includes(treatment.replace(/\s+/g, '')) || treatment.includes(lowerMessage))) {
@@ -317,20 +333,19 @@ export class OpenAIService {
     treatments: HealthcareTreatment[], 
     intent: string
   ): Promise<string> {
-    // Handle different intents with specific API calls
     switch (intent) {
+      case 'cost_inquiry':
+        return await this.handleCostInquiry(userMessage, treatments);
+      case 'treatment_list':
+        return await this.handleTreatmentList(treatments);
+      case 'specific_treatment':
+        return await this.handleSpecificTreatment(userMessage, treatments);
       case 'doctor_inquiry':
         return await this.handleDoctorInquiry(userMessage, treatments);
-
       case 'appointment_booking':
         return await this.handleAppointmentBooking(userMessage);
-
       case 'clinic_info':
         return await this.handleClinicInfo(userMessage);
-
-      case 'treatment_selection':
-        return await this.handleTreatmentSelection(userMessage, treatments);
-
       default:
         return await this.handleTreatmentResponse(userMessage, treatments, intent);
     }
@@ -689,6 +704,58 @@ I'd be happy to help you book an appointment! To proceed, I'll need the followin
 
     return response.choices[0].message.content || 
       "I'd be happy to help you with information about our healthcare treatments and services.";
+  }
+
+  private async handleCostInquiry(userMessage: string, treatments: HealthcareTreatment[]): Promise<string> {
+    // This is a placeholder for cost inquiry logic, which is not fully implemented in the provided snippet.
+    // For now, it will fall back to the general treatment response.
+    return this.handleTreatmentResponse(userMessage, treatments, 'cost_inquiry');
+  }
+
+  private async handleSpecificTreatment(userMessage: string, treatments: HealthcareTreatment[]): Promise<string> {
+    // This is a placeholder for specific treatment logic, which is not fully implemented in the provided snippet.
+    // For now, it will fall back to the general treatment response.
+    return this.handleTreatmentResponse(userMessage, treatments, 'specific_treatment');
+  }
+
+  private async handleTreatmentList(treatments: HealthcareTreatment[]): Promise<string> {
+    if (treatments.length === 0) {
+      return "I'm sorry, I couldn't find any treatments available at the moment. Please contact our clinic for more information.";
+    }
+
+    const flatTreatments = this.flattenTreatments(treatments);
+
+    let response = "# Complete List of Healthcare Services\n\n";
+    response += `We offer **${flatTreatments.length}** different treatments and services:\n\n`;
+
+    // Group treatments by type/category for better organization
+    const conditions = flatTreatments.filter(t => t.name.includes('(C)'));
+    const treatmentServices = flatTreatments.filter(t => t.name.includes('(T)'));
+
+    if (conditions.length > 0) {
+      response += "## Medical Conditions We Treat:\n";
+      conditions.forEach((treatment, index) => {
+        const cleanName = treatment.t_name || treatment.name.replace(' (C)', '');
+        const price = treatment.price ? `₹${treatment.price}` : 'Contact for Quote';
+        response += `${index + 1}. **${cleanName}** - ${price}\n`;
+      });
+      response += "\n";
+    }
+
+    if (treatmentServices.length > 0) {
+      response += "## Treatment Services:\n";
+      treatmentServices.forEach((treatment, index) => {
+        const cleanName = treatment.t_name || treatment.name.replace(' (T)', '');
+        const price = treatment.price ? `₹${treatment.price}` : 'Contact for Quote';
+        response += `${index + 1}. **${cleanName}** - ${price}\n`;
+      });
+    }
+
+    response += "\n---\n\n";
+    response += "💡 **Need more details?** Ask about any specific treatment or condition!\n\n";
+    response += "📞 **Ready to book?** Just say \"book appointment\" and I'll help you schedule a consultation.";
+
+    return response;
   }
 }
 

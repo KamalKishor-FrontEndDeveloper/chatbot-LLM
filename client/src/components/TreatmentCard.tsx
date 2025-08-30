@@ -1,6 +1,7 @@
 import { HealthcareTreatment } from '@shared/schema';
 import { useState, useEffect } from 'react';
 import { Users } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 
 interface TreatmentCardProps {
   treatment: HealthcareTreatment;
@@ -46,6 +47,21 @@ export default function TreatmentCard({ treatment }: TreatmentCardProps) {
 
   const doctorCount = getDoctorCount(treatment);
   const treatmentDoctorIds = getDoctorIds(treatment);
+
+  const { data: doctors } = useQuery({
+    queryKey: ['doctors'],
+    queryFn: async () => {
+      const response = await fetch('/api/doctors');
+      if (!response.ok) throw new Error('Failed to fetch doctors');
+      const result = await response.json();
+      return result.data;
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  const availableDoctors = doctors?.filter((doctor: any) => 
+    treatmentDoctorIds.includes(doctor.id)
+  ) || [];
 
   useEffect(() => {
     const fetchDoctorNames = async () => {
