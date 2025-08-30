@@ -38,7 +38,11 @@ export const getQueryFn: <T>(options: {
     }
 
     await throwIfResNotOk(res);
-    return await res.json();
+    try {
+      return await res.json();
+    } catch (error) {
+      throw new Error('Invalid JSON response from server');
+    }
   };
 
 export const queryClient = new QueryClient({

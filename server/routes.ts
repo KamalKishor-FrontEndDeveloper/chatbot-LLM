@@ -1,8 +1,10 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { z } from "zod";
-import { openAIService } from "./services/openai";
+import { mistralService } from "./services/mistral";
 import { healthcareApi } from "./services/healthcare-api";
+import { tavilyService } from "./services/tavily";
+import { sanitizeForOutput } from "./utils/sanitizer";
 
 const ChatRequestSchema = z.object({
   message: z.string().min(1, "Message cannot be empty"),
@@ -15,12 +17,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { message, sessionId } = ChatRequestSchema.parse(req.body);
       
-      const response = await openAIService.processHealthcareQuery(message);
+      const response = await mistralService.processHealthcareQuery(message);
       
       res.json({
         success: true,
         data: {
-          message: response.message,
+          message: sanitizeForOutput(response.message),
           treatments: response.treatments,
           intent: response.intent,
           timestamp: new Date().toISOString(),
@@ -30,7 +32,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Chat API Error:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "Internal server error"
+        error: error instanceof Error ? sanitizeForOutput(error.message) : "Internal server error"
       });
     }
   });
@@ -72,7 +74,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Treatment Search API Error:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "Failed to search treatments"
+        error: error instanceof Error ? sanitizeForOutput(error.message) : "Failed to search treatments"
       });
     }
   });
@@ -89,7 +91,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Pricing API Error:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "Failed to fetch pricing information"
+        error: error instanceof Error ? sanitizeForOutput(error.message) : "Failed to fetch pricing information"
       });
     }
   });
@@ -106,7 +108,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Doctors API Error:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "Failed to fetch doctors"
+        error: error instanceof Error ? sanitizeForOutput(error.message) : "Failed to fetch doctors"
+      });
+    }
+  });
+
+  // Web content extraction
+  app.post("/api/extract", async (req, res) => {
+    try {
+      const { urls } = req.body;
+      if (!urls || !Array.isArray(urls)) {
+        return res.status(400).json({
+          success: false,
+          error: "URLs array is required"
+        });
+      }
+
+      const content = await tavilyService.extractContent(urls);
+      res.json({
+        success: true,
+        data: content
+      });
+    } catch (error) {
+      console.error("Extract API Error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to extract content"
+      });
+    }
+  });
+
+  // Search and extract
+  app.get("/api/search-extract", async (req, res) => {
+    try {
+      const { q, maxResults } = req.query;
+      if (!q) {
+        return res.status(400).json({
+          success: false,
+          error: "Query parameter 'q' is required"
+        });
+      }
+
+      const content = await tavilyService.searchAndExtract(
+        q as string, 
+        maxResults ? parseInt(maxResults as string) : 3
+      );
+      res.json({
+        success: true,
+        data: content
+      });
+    } catch (error) {
+      console.error("Search Extract API Error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to search and extract content"
       });
     }
   });
@@ -136,7 +191,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Appointment Booking API Error:", error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "Failed to book appointment"
+        error: error instanceof Error ? sanitizeForOutput(error.message) : "Failed to book appointment"
       });
     }
   });

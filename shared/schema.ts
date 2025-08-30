@@ -11,7 +11,7 @@ export const users = pgTable("users", {
 
 export const chatSessions = pgTable("chat_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id"),
+  userId: varchar("user_id").references(() => users.id),
   messages: jsonb("messages").notNull().default('[]'),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -41,6 +41,8 @@ export const HealthcareTreatmentSchema = z.object({
   t_name: z.string(),
   name: z.string(),
   children: z.array(z.any()).optional(),
+  doctorNames: z.array(z.string()).optional(),
+  doctorCount: z.number().optional(),
 });
 
 export const HealthcareApiResponseSchema = z.object({
@@ -59,6 +61,17 @@ export const DoctorSchema = z.object({
   id: z.number(),
   name: z.string(),
   specialization: z.string().optional(),
+  qualification: z.string().optional(),
+  experience: z.string().optional(),
+  gender: z.string().optional(),
+  phone: z.string().optional(),
+  email: z.string().optional(),
+  about: z.string().optional(),
+  image: z.string().optional(),
+  address: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  services: z.string().optional(),
   is_available: z.boolean().optional(),
 });
 

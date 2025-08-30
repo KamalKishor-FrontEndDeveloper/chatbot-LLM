@@ -21,12 +21,13 @@ export default function SuggestedQuery({ query, onClick }: SuggestedQueryProps) 
   };
 
   const colorClasses = getColorClasses(query.color);
+  const colorClassArray = colorClasses.split(' ');
 
   return (
     <button 
       className={cn(
         "bg-card border border-border rounded-lg p-4 text-left transition-all duration-200 hover:shadow-md group",
-        colorClasses.split(' ')[0]
+        colorClassArray[0]
       )}
       onClick={onClick}
       data-testid="suggested-query-button"
@@ -35,9 +36,9 @@ export default function SuggestedQuery({ query, onClick }: SuggestedQueryProps) 
         <div className={cn(
           "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
           `bg-${query.color}/10`,
-          colorClasses.split(' ')[1]
+          colorClassArray[1]
         )}>
-          <i className={cn(query.icon, "text-sm", colorClasses.split(' ')[2])}></i>
+          <i className={cn(query.icon, "text-sm", colorClassArray[2])}></i>
         </div>
         <div className="flex-1">
           <p className="font-medium text-foreground text-sm">{query.title}</p>

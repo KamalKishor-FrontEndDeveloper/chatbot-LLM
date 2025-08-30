@@ -1,5 +1,7 @@
+import React from 'react';
 import { ChatMessage } from '@/types/chat';
 import TreatmentCard from './TreatmentCard';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -27,23 +29,39 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
     });
   };
 
-  // State to manage the visibility of the appointment form and submission result
+  // State to manage the visibility of the appointment form, CTA and submission result
   const [showForm, setShowForm] = React.useState(false);
   const [formSubmitted, setFormSubmitted] = React.useState(false);
   const [submitResult, setSubmitResult] = React.useState('');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [showBookingCTA, setShowBookingCTA] = React.useState(false);
 
   // Handler for when the appointment form is submitted
   const handleAppointmentSubmit = async (data: AppointmentData) => {
     setIsSubmitting(true);
-    // In a real application, you would send this data to an API
-    console.log('Appointment submitted:', data);
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setSubmitResult(`Thank you, ${data.name}! Your appointment for ${data.service} on ${data.date} has been booked. We will contact you at ${data.email} or ${data.phone} for confirmation.`);
+    try {
+      const response = await fetch('/api/appointments/book', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setSubmitResult(`✅ **Appointment Booked Successfully!**\n\nThank you, ${data.name}! Your appointment for ${data.service} on ${data.date} has been booked. We will contact you at ${data.email} or ${data.phone} for confirmation.`);
+      } else {
+        setSubmitResult(`❌ **Booking Failed**\n\n${result.message || 'Please try again or contact our clinic directly.'}`);
+      }
+    } catch (error) {
+      setSubmitResult(`❌ **Booking Error**\n\nUnable to book appointment. Please contact our clinic directly at **9654122458**.`);
+    }
+    
     setFormSubmitted(true);
     setIsSubmitting(false);
-    setShowForm(false); // Hide form after submission
+    setShowForm(false);
   };
 
   // Handler to cancel the form
@@ -52,15 +70,14 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
     // Optionally, you might want to reset other states here if needed
   };
 
-  // Determine if the message content indicates a request for appointment booking
-  const isBookingRequest = message.content.toLowerCase().includes('book an appointment');
-
-  // If the message is a booking request and the form hasn't been submitted yet, show the form
+  // Use server-provided intent to decide whether to surface booking CTA
   React.useEffect(() => {
-    if (isBookingRequest && !formSubmitted) {
-      setShowForm(true);
+    if (message.intent === 'appointment_booking' && !formSubmitted) {
+      setShowBookingCTA(true);
+    } else {
+      setShowBookingCTA(false);
     }
-  }, [message.content, formSubmitted]);
+  }, [message.intent, formSubmitted]);
 
 
   if (message.role === 'user') {
@@ -112,11 +129,38 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
           </div>
 
           <div className="p-3 rounded-lg bg-muted text-muted-foreground">
-            <AppointmentForm
-              onSubmit={handleAppointmentSubmit}
-              onCancel={handleFormCancel}
-              isSubmitting={isSubmitting}
-            />
+            <div className="max-w-sm">
+              <AppointmentForm
+                onSubmit={handleAppointmentSubmit}
+                onCancel={handleFormCancel}
+                isSubmitting={isSubmitting}
+              />
+            </div>
+            <span className="text-xs text-muted-foreground mt-2 block">{formatTime(message.timestamp)}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If server signaled appointment intent, show a non-intrusive CTA instead of auto-opening form
+  if (showBookingCTA) {
+    return (
+      <div className="flex mb-4 justify-start">
+        <div className="max-w-[80%] order-1">
+          <div className="flex items-center mb-2">
+            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center mr-2">
+              <i className="fas fa-robot text-primary text-sm"></i>
+            </div>
+            <span className="text-sm font-medium text-foreground">HealthLantern AI</span>
+          </div>
+
+          <div className="p-3 rounded-lg bg-muted text-muted-foreground">
+            <div className="text-sm mb-3">It looks like you'd like to book an appointment. Would you like to proceed to book one?</div>
+            <div className="flex gap-2">
+              <Button onClick={() => { setShowForm(true); setShowBookingCTA(false); }} className="flex-1">Book Appointment</Button>
+              <Button variant="outline" onClick={() => setShowBookingCTA(false)} className="flex-1">No thanks</Button>
+            </div>
             <span className="text-xs text-muted-foreground mt-2 block">{formatTime(message.timestamp)}</span>
           </div>
         </div>
@@ -171,7 +215,7 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
                 <div className="flex items-start space-x-2">
                   <i className="fas fa-lightbulb text-secondary text-sm mt-0.5"></i>
                   <div className="text-sm">
-                    <p className="font-medium text-foreground">Need more information?</p>
+                    <p className="font-medium text-foreground m-0 p-0 ">Need more information?</p>
                     <p className="text-muted-foreground">You can ask about specific doctors, compare treatments, or inquire about consultation booking.</p>
                   </div>
                 </div>

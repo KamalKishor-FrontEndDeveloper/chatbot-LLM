@@ -61,7 +61,7 @@ export default function ChatInterface() {
       setIsLoading(false);
     },
     onError: (error) => {
-      console.error('Chat error:', error);
+      console.error('Chat error occurred');
       toast({
         title: "Connection Error",
         description: "Unable to connect to the AI assistant. Please try again.",
@@ -128,7 +128,7 @@ export default function ChatInterface() {
             <div className="text-center mb-8">
               <div className="inline-flex items-center space-x-2 bg-muted px-4 py-2 rounded-full text-sm text-muted-foreground mb-4">
                 <i className="fas fa-robot text-primary"></i>
-                <span>Powered by OpenAI & CopilotKit</span>
+                <span>Powered by Citrine Clinic</span>
               </div>
               <h2 className="text-2xl font-bold text-foreground mb-2">How can I help you today?</h2>
               <p className="text-muted-foreground max-w-2xl mx-auto">
@@ -179,7 +179,7 @@ export default function ChatInterface() {
           />
           
           {/* API Status Indicator */}
-          <div className="flex items-center justify-center mt-3 space-x-4 text-xs text-muted-foreground">
+          {/* <div className="flex items-center justify-center mt-3 space-x-4 text-xs text-muted-foreground">
             <div className="flex items-center space-x-1">
               <div className="w-2 h-2 bg-secondary rounded-full"></div>
               <span>HealthLantern API Connected</span>
@@ -192,7 +192,7 @@ export default function ChatInterface() {
               <div className="w-2 h-2 bg-accent rounded-full"></div>
               <span>CopilotKit Ready</span>
             </div>
-          </div>
+          </div> */}
         </div>
       </div>
     </div>
