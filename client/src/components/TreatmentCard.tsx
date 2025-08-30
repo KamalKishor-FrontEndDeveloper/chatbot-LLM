@@ -16,25 +16,32 @@ export default function TreatmentCard({ treatment }: TreatmentCardProps) {
   const [doctorNames, setDoctorNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const getDoctorCount = (doctors: string): number => {
-    if (!doctors) return 0;
-    try {
-      const doctorIds = JSON.parse(doctors);
-      return Array.isArray(doctorIds) ? doctorIds.length : 0;
-    } catch {
-      return 0;
-    }
+  // Helper function to get doctor IDs from comma-separated string
+  const getDoctorIds = (doctorsString: string): string[] => {
+    if (!doctorsString || doctorsString.trim() === '') return [];
+    const doctorIds = doctorsString.split(',').map(id => id.trim()).filter(id => id !== '');
+    return doctorIds;
   };
 
-  const getDoctorIds = (doctors: string): number[] => {
-    if (!doctors) return [];
-    try {
-      const doctorIds = JSON.parse(doctors);
-      return Array.isArray(doctorIds) ? doctorIds : [];
-    } catch {
-      return [];
-    }
+  const getDoctorNames = (doctorsString: string): string[] => {
+    if (!doctorsString || doctorsString.trim() === '') return [];
+
+    // Handle both comma-separated names and IDs
+    const doctors = doctorsString.split(',').map(doctor => doctor.trim()).filter(doctor => doctor !== '');
+
+    // If they look like names (contain spaces or start with "Dr"), return as is
+    // Otherwise, treat as IDs and format them
+    return doctors.map(doctor => {
+      if (doctor.includes(' ') || doctor.startsWith('Dr')) {
+        return doctor;
+      }
+      // If it's just an ID, format it nicely
+      return `Dr. ${doctor}`;
+    });
   };
+
+  const doctorNames = getDoctorNames(treatment.doctors);
+  const doctorCount = getDoctorIds(treatment.doctors).length;
 
   useEffect(() => {
     const fetchDoctorNames = async () => {
@@ -69,11 +76,10 @@ export default function TreatmentCard({ treatment }: TreatmentCardProps) {
 
   const isCondition = treatment.name.includes('(C)');
   const isTreatment = treatment.name.includes('(T)');
-  
+
   const categoryType = isCondition ? 'Condition' : isTreatment ? 'Treatment' : 'Service';
   const categoryColor = isCondition ? 'bg-accent/10 text-accent' : 'bg-secondary/10 text-secondary';
 
-  const doctorCount = getDoctorCount(treatment.doctors);
   const hasPrice = treatment.price && treatment.price !== '';
 
   return (
@@ -89,11 +95,11 @@ export default function TreatmentCard({ treatment }: TreatmentCardProps) {
               {categoryType}
             </span>
           </div>
-          
+
           {treatment.name !== treatment.t_name && (
             <p className="text-sm text-muted-foreground mb-3">{treatment.name.replace(/\s*\([CT]\)$/, '')}</p>
           )}
-          
+
           <div className="flex items-center space-x-4 text-sm">
             {doctorCount > 0 && (
               <div className="flex items-center space-x-1">
@@ -103,13 +109,13 @@ export default function TreatmentCard({ treatment }: TreatmentCardProps) {
                 </span>
               </div>
             )}
-            
+
             <div className="flex items-center space-x-1">
               <i className="fas fa-info-circle text-accent text-xs"></i>
               <span className="text-muted-foreground">ID: {treatment.id}</span>
             </div>
           </div>
-          
+
           {doctorCount > 0 && (
             <div className="mt-2">
               <div className="text-xs text-muted-foreground mb-1">Available Doctors:</div>
@@ -134,7 +140,7 @@ export default function TreatmentCard({ treatment }: TreatmentCardProps) {
             </div>
           )}
         </div>
-        
+
         <div className="text-right ml-4">
           <p className="text-sm text-muted-foreground">Price</p>
           {hasPrice ? (
