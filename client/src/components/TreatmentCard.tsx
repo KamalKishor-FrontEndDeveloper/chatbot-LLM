@@ -23,7 +23,8 @@ export default function TreatmentCard({ treatment }: TreatmentCardProps) {
     return doctorIds;
   };
 
-  const doctorCount = getDoctorIds(treatment.doctors).length;
+  const doctorIds = getDoctorIds(treatment.doctors);
+  const doctorCount = doctorIds.length;
 
   useEffect(() => {
     const fetchDoctorNames = async () => {
