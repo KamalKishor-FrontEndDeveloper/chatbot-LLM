@@ -11,6 +11,7 @@ import ContactQuoteForm from "./ContactQuoteForm"
 
 interface ChatMessageProps {
   message: ChatMessage
+  onFormStateChange?: (isOpen: boolean) => void
 }
 
 interface AppointmentData {
@@ -85,7 +86,8 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
   // Handler to cancel the form
   const handleFormCancel = () => {
     setShowForm(false)
-    // Optionally, you might want to reset other states here if needed
+    setShowBookingCTA(true) // Show the booking CTA again
+    setInitialAppointmentData(undefined) // Clear any prefilled data
   }
 
   // Use server-provided intent to decide whether to surface booking CTA
@@ -99,10 +101,10 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
 
   if (message.role === "user") {
     return (
-      <div className="flex justify-end message-fade-in" data-testid="user-message">
-        <div className="max-w-xs lg:max-w-md bg-primary text-primary-foreground rounded-2xl rounded-br-md px-4 py-3 shadow-sm">
-          <p className="text-sm leading-6">{message.content}</p>
-          <span className="text-[10px] opacity-80 mt-1 block text-right">{formatTime(message.timestamp)}</span>
+      <div className="flex justify-end animate-in slide-in-from-right-4 duration-500" data-testid="user-message">
+        <div className="max-w-xs lg:max-w-md bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-3xl rounded-br-lg px-5 py-4 shadow-lg hover:shadow-xl transition-all duration-300">
+          <p className="text-sm leading-6 font-medium">{message.content}</p>
+          <span className="text-[10px] opacity-90 mt-2 block text-right font-medium">{formatTime(message.timestamp)}</span>
         </div>
       </div>
     )
@@ -215,12 +217,12 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
 
   // Default assistant message rendering
   return (
-    <div className="flex items-start space-x-3 message-fade-in" data-testid="assistant-message">
-      <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center flex-shrink-0 mt-1 ring-1 ring-primary/20">
-        <i className="fas fa-robot text-primary-foreground text-sm"></i>
+    <div className="flex items-start space-x-3 animate-in slide-in-from-left-4 duration-300" data-testid="assistant-message">
+      <div className="w-8 h-8 bg-gradient-to-br from-blue-500 via-purple-500 to-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0 mt-1 shadow-md">
+        <i className="fas fa-robot text-white text-xs"></i>
       </div>
       <div className="flex-1 max-w-2xl">
-        <div className="bg-card border border-border rounded-2xl rounded-tl-md px-4 py-3 md:px-5 md:py-4 shadow-sm">
+        <div className="bg-white/95 dark:bg-slate-800/95 border border-slate-200/50 dark:border-slate-700/50 rounded-2xl rounded-tl-md px-4 py-3 shadow-md hover:shadow-lg transition-all duration-200 backdrop-blur-sm">
           <div className="prose prose-sm max-w-none text-foreground leading-relaxed">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}

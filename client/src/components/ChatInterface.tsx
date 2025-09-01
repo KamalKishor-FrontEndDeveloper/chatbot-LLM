@@ -6,9 +6,13 @@ import ChatMessageComponent from "./ChatMessage"
 import ChatInput from "./ChatInput"
 import SuggestedQuery from "./SuggestedQuery"
 import ThinkingIndicator from "./ThinkingIndicator"
+import TypingIndicator from "./TypingIndicator"
+import DeepThinkingIndicator from "./DeepThinkingIndicator"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { apiRequest } from "@/lib/queryClient"
 import { useToast } from "@/hooks/use-toast"
+import { Button } from "@/components/ui/button"
+import { Moon, Sun, Menu, MessageSquare, Download, Trash2 } from "lucide-react"
 
 const suggestedQueries = [
   {
@@ -32,10 +36,30 @@ const suggestedQueries = [
 ]
 
 export default function ChatInterface() {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('chat-messages')
+      return saved ? JSON.parse(saved) : []
+    }
+    return []
+  })
   const [isLoading, setIsLoading] = useState(false)
+  const [isDeepThinking, setIsDeepThinking] = useState(false)
+  const [isFormOpen, setIsFormOpen] = useState(false)
+  const [streamingMessage, setStreamingMessage] = useState<ChatMessage | null>(null)
+  const [isDarkMode, setIsDarkMode] = useState(false)
+  const [showSidebar, setShowSidebar] = useState(false)
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
+
+  // Dark mode toggle
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  }, [isDarkMode])
 
   // Load dynamic greeting on mount
   useEffect(() => {
@@ -73,41 +97,74 @@ export default function ChatInterface() {
     retry: false,
   })
 
-  const chatMutation = useMutation({
-    mutationFn: async (message: string) => {
+  const handleStreamingResponse = async (message: string) => {
+    // Temporarily disable streaming and use fallback for now
+    console.log('Using fallback response (streaming disabled temporarily)')
+    return handleFallbackResponse(message)
+  }
+
+  const handleFallbackResponse = async (message: string) => {
+    try {
+      console.log('Using fallback non-streaming response')
       const response = await apiRequest("POST", "/api/chat", { message })
-      return response.json()
-    },
-    onSuccess: (data) => {
+      const data = await response.json()
+      
       if (data.success) {
+        // Simulate streaming by showing the message word by word
         const assistantMessage: ChatMessage = {
           id: Date.now().toString() + "-assistant",
           role: "assistant",
-          content: data.data.message,
-          timestamp: data.data.timestamp,
+          content: "",
           treatments: data.data.treatments,
           intent: data.data.intent,
+          timestamp: data.data.timestamp,
         }
-        setMessages((prev) => [...prev, assistantMessage])
-      } else {
-        toast({
-          title: "Error",
-          description: data.error || "Failed to get response",
-          variant: "destructive",
+        
+        setStreamingMessage(assistantMessage)
+        
+        // Stream the content word by word
+        const words = data.data.message.split(' ')
+        for (let i = 0; i < words.length; i++) {
+          const chunk = i === 0 ? words[i] : ' ' + words[i]
+          assistantMessage.content += chunk
+          setStreamingMessage({ ...assistantMessage })
+          await new Promise(resolve => setTimeout(resolve, 50))
+        }
+        
+        // Finalize the message
+        setMessages((prev) => {
+          const newMessages = [...prev, assistantMessage]
+          localStorage.setItem('chat-messages', JSON.stringify(newMessages))
+          return newMessages
         })
+        setStreamingMessage(null)
+      } else {
+        throw new Error(data.error || 'Chat request failed')
       }
-      setIsLoading(false)
-    },
-    onError: (error) => {
-      console.error("Chat error occurred")
+    } catch (error) {
+      console.error('Fallback chat error:', error)
       toast({
         title: "Connection Error",
         description: "Unable to connect to the AI assistant. Please try again.",
         variant: "destructive",
       })
+    } finally {
       setIsLoading(false)
-    },
-  })
+      setIsDeepThinking(false)
+    }
+  }
+
+  const isComplexQuery = (query: string) => {
+    const complexKeywords = [
+      'niti gaur', 'dr niti', 'doctor niti', 'who is',
+      'compare', 'difference between', 'vs', 'versus',
+      'detailed', 'comprehensive', 'explain', 'analysis',
+      'research', 'study', 'scientific', 'medical history',
+      'side effects', 'complications', 'risks', 'benefits',
+      'procedure steps', 'how does', 'mechanism', 'process'
+    ]
+    return complexKeywords.some(keyword => query.toLowerCase().includes(keyword))
+  }
 
   const handleSendMessage = (message: string) => {
     if (!message.trim() || isLoading) return
@@ -119,9 +176,16 @@ export default function ChatInterface() {
       timestamp: new Date().toISOString(),
     }
 
-    setMessages((prev) => [...prev, userMessage])
+    setMessages((prev) => {
+      const newMessages = [...prev, userMessage]
+      localStorage.setItem('chat-messages', JSON.stringify(newMessages))
+      return newMessages
+    })
+    
+    const isComplex = isComplexQuery(message)
     setIsLoading(true)
-    chatMutation.mutate(message)
+    setIsDeepThinking(isComplex)
+    handleStreamingResponse(message)
   }
 
   const handleSuggestedQuery = (example: string) => {
@@ -133,111 +197,167 @@ export default function ChatInterface() {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
     }
-  }, [messages, isLoading])
+  }, [messages, streamingMessage, isLoading])
+
+  const clearChat = () => {
+    setMessages([])
+    localStorage.removeItem('chat-messages')
+  }
+
+  const exportChat = () => {
+    const chatData = messages.map(m => `${m.role}: ${m.content}`).join('\n\n')
+    const blob = new Blob([chatData], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'chat-export.txt'
+    a.click()
+  }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="max-w-4xl mx-auto px-4 py-3 md:py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-sm ring-1 ring-primary/20">
-              <i className="fas fa-stethoscope text-primary-foreground text-lg"></i>
-            </div>
-            <div>
-              <h1 className="text-lg md:text-xl font-semibold text-foreground leading-tight">HealthLantern AI</h1>
-              <p className="text-xs md:text-sm text-muted-foreground">Your Healthcare Assistant</p>
+    <div className="flex h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+      {/* Sidebar */}
+      <div className={`fixed inset-y-0 left-0 z-50 w-80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-r border-slate-200/50 dark:border-slate-700/50 shadow-xl transform transition-all duration-300 ${showSidebar ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:inset-0`}>
+        <div className="flex flex-col h-full">
+          <div className="p-6 border-b border-slate-200/50 dark:border-slate-700/50 bg-gradient-to-r from-blue-500/5 to-purple-500/5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                  <MessageSquare className="w-4 h-4 text-white" />
+                </div>
+                <h2 className="font-semibold text-slate-900 dark:text-white">Chat History</h2>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setShowSidebar(false)} className="lg:hidden hover:bg-slate-100 dark:hover:bg-slate-800">
+                ×
+              </Button>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
-            <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-              <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.15)]"></div>
-              <span className="text-xs md:text-sm font-medium">Live</span>
+          <div className="flex-1 p-6">
+            <div className="space-y-3">
+              <div className="group p-4 rounded-xl bg-gradient-to-r from-blue-50 to-purple-50 dark:from-slate-800 dark:to-slate-700 cursor-pointer hover:from-blue-100 hover:to-purple-100 dark:hover:from-slate-700 dark:hover:to-slate-600 transition-all duration-200 border border-slate-200/50 dark:border-slate-600/50">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white group-hover:text-blue-700 dark:group-hover:text-blue-300 transition-colors">Current Session</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{messages.length} messages</p>
+                  </div>
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                </div>
+              </div>
             </div>
           </div>
+          <div className="p-6 border-t border-slate-200/50 dark:border-slate-700/50 space-y-3 bg-gradient-to-r from-slate-50/50 to-blue-50/50 dark:from-slate-800/50 dark:to-slate-700/50">
+            <Button variant="outline" size="sm" onClick={clearChat} className="w-full justify-start hover:bg-red-50 hover:border-red-200 hover:text-red-700 dark:hover:bg-red-900/20 dark:hover:border-red-800 dark:hover:text-red-400 transition-all duration-200">
+              <Trash2 className="w-4 h-4 mr-2" />
+              Clear Chat
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportChat} className="w-full justify-start hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 dark:hover:bg-blue-900/20 dark:hover:border-blue-800 dark:hover:text-blue-400 transition-all duration-200">
+              <Download className="w-4 h-4 mr-2" />
+              Export Chat
+            </Button>
+          </div>
         </div>
-      </header>
+      </div>
 
-      {/* Main Chat Container */}
-      <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-6 flex flex-col">
-        {messages.length === 0 ? (
-          <>
-            {/* Welcome Message */}
-            <div className="text-center mb-8">
-              <div className="inline-flex items-center space-x-2 bg-muted px-4 py-2 rounded-full text-sm text-muted-foreground mb-4">
-                <i className="fas fa-robot text-primary"></i>
-                <span>Powered by Citrine Clinic</span>
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col">
+
+
+        {/* Main Chat Container */}
+        <main className="flex-1 flex flex-col overflow-hidden">
+          {messages.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center p-6">
+              <div className="text-center max-w-2xl">
+                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 via-purple-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
+                  <i className="fas fa-stethoscope text-white text-xl"></i>
+                </div>
+                <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-4">Welcome to HealthLantern AI</h2>
+                <p className="text-slate-600 dark:text-slate-400 mb-8 text-base">
+                  Your intelligent healthcare assistant for Citrine Clinic. Ask about treatments, pricing, or book appointments.
+                </p>
+                
+                {/* Suggested Queries */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {suggestedQueries.map((query, index) => (
+                    <SuggestedQuery
+                      key={index}
+                      query={query}
+                      onClick={() => handleSuggestedQuery(query.example)}
+                      data-testid={`suggested-query-${index}`}
+                    />
+                  ))}
+                </div>
               </div>
-              <h2 className="text-2xl font-bold text-foreground mb-2">How can I help you today?</h2>
-              <p className="text-muted-foreground max-w-2xl mx-auto">
-                Ask me about treatment costs, available services, doctor availability, or any healthcare-related
-                questions.
-              </p>
             </div>
-
-            {/* Suggested Queries */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-8">
-              {suggestedQueries.map((query, index) => (
-                <SuggestedQuery
-                  key={index}
-                  query={query}
-                  onClick={() => handleSuggestedQuery(query.example)}
-                  data-testid={`suggested-query-${index}`}
-                />
-              ))}
-            </div>
-          </>
-        ) : null}
-
-        {/* Chat Messages Container */}
-        <div
-          ref={chatContainerRef}
-          className="flex-1 space-y-4 overflow-y-auto scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent rounded-xl bg-muted/10 p-2 md:p-3"
-          data-testid="chat-container"
-        >
-          {messages.map((message) => (
-            <ChatMessageComponent key={message.id} message={message} data-testid={`message-${message.id}`} />
-          ))}
-
-          {/* Enhanced Loading Message */}
-          {isLoading && <ThinkingIndicator />}
-        </div>
-      </main>
-
-      {/* Input Area */}
-      <div className="sticky bottom-0 bg-background/90 backdrop-blur-sm border-t border-border">
-        <div className="max-w-4xl mx-auto px-4 py-3 md:py-4">
-          <ChatInput onSendMessage={handleSendMessage} disabled={isLoading} data-testid="chat-input" />
-
-          {/* API Status Indicator */}
-          {healthStatus?.success && (
-            <div className="flex items-center justify-center mt-3 space-x-4 text-xs text-muted-foreground">
-              <div className="flex items-center space-x-1">
-                <div
-                  className={`w-2 h-2 rounded-full ${
-                    healthStatus.data.apis.treatments === "OK"
-                      ? "bg-green-500"
-                      : healthStatus.data.apis.treatments === "Empty"
-                        ? "bg-yellow-500"
-                        : "bg-red-500"
-                  }`}
-                ></div>
-                <span>Treatment Data {healthStatus.data.apis.treatments === "Failed" ? "(Using Backup)" : ""}</span>
-              </div>
-              <div className="flex items-center space-x-1">
-                <div
-                  className={`w-2 h-2 rounded-full ${
-                    healthStatus.data.apis.doctors === "OK"
-                      ? "bg-green-500"
-                      : healthStatus.data.apis.doctors === "Empty"
-                        ? "bg-yellow-500"
-                        : "bg-red-500"
-                  }`}
-                ></div>
-                <span>Doctor Info {healthStatus.data.apis.doctors === "Failed" ? "(Using Backup)" : ""}</span>
+          ) : (
+            <div
+              ref={chatContainerRef}
+              className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
+              data-testid="chat-container"
+            >
+              <div className="max-w-4xl mx-auto">
+                {messages.map((message, index) => (
+                  <div key={message.id} className="animate-in slide-in-from-bottom-4 duration-300 mb-3" style={{animationDelay: `${index * 50}ms`}}>
+                    <ChatMessageComponent 
+                      message={message} 
+                      onFormStateChange={setIsFormOpen}
+                      data-testid={`message-${message.id}`} 
+                    />
+                  </div>
+                ))}
+                {streamingMessage && (
+                  <div className="animate-in slide-in-from-bottom-4 duration-300 mb-3">
+                    <ChatMessageComponent 
+                      message={streamingMessage} 
+                      onFormStateChange={setIsFormOpen}
+                      data-testid={`streaming-message`} 
+                    />
+                  </div>
+                )}
+                {isLoading && !streamingMessage && (
+                  <div className="animate-in slide-in-from-bottom-4 duration-300">
+                    {isDeepThinking ? <DeepThinkingIndicator /> : <TypingIndicator />}
+                  </div>
+                )}
               </div>
             </div>
           )}
+        </main>
+
+        {/* Input Area */}
+        <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200/50 dark:border-slate-700/50 shadow-lg">
+          <div className="max-w-4xl mx-auto px-4 py-4">
+            <ChatInput onSendMessage={handleSendMessage} disabled={isLoading || isFormOpen} data-testid="chat-input" />
+
+            {/* API Status Indicator */}
+            {/* {healthStatus?.success && (
+              <div className="flex items-center justify-center mt-3 space-x-4 text-xs text-slate-500 dark:text-slate-400">
+                <div className="flex items-center space-x-1.5 px-2 py-1 bg-slate-100/50 dark:bg-slate-800/50 rounded-full">
+                  <div
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      healthStatus.data.apis.treatments === "OK"
+                        ? "bg-green-500"
+                        : healthStatus.data.apis.treatments === "Empty"
+                          ? "bg-yellow-500"
+                          : "bg-red-500"
+                    }`}
+                  ></div>
+                  <span>Treatment Data</span>
+                </div>
+                <div className="flex items-center space-x-1.5 px-2 py-1 bg-slate-100/50 dark:bg-slate-800/50 rounded-full">
+                  <div
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      healthStatus.data.apis.doctors === "OK"
+                        ? "bg-green-500"
+                        : healthStatus.data.apis.doctors === "Empty"
+                          ? "bg-yellow-500"
+                          : "bg-red-500"
+                    }`}
+                  ></div>
+                  <span>Doctor Info</span>
+                </div>
+              </div>
+            )} */}
+          </div>
         </div>
       </div>
     </div>

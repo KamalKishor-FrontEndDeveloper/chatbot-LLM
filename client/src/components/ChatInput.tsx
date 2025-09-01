@@ -1,9 +1,10 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useRef, type KeyboardEvent } from "react"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import { Send, Mic, MicOff } from "lucide-react"
 
 interface ChatInputProps {
   onSendMessage: (message: string) => void
@@ -47,7 +48,7 @@ export default function ChatInput({ onSendMessage, disabled }: ChatInputProps) {
 
   const handleVoiceInput = () => {
     if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
-      alert("Speech recognition not supported in this browser")
+      alert("Voice input not supported in this browser. Please use Chrome, Edge, or Safari.")
       return
     }
 
@@ -66,19 +67,26 @@ export default function ChatInput({ onSendMessage, disabled }: ChatInputProps) {
 
     recognition.onstart = () => {
       setIsRecording(true)
+      console.log('Voice recording started')
     }
 
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript
+      console.log('Voice transcript:', transcript)
       setMessage(transcript)
       setIsRecording(false)
     }
 
-    recognition.onerror = () => {
+    recognition.onerror = (event: any) => {
+      console.error('Voice recognition error:', event.error)
       setIsRecording(false)
+      if (event.error === 'not-allowed') {
+        alert('Microphone access denied. Please allow microphone access and try again.')
+      }
     }
 
     recognition.onend = () => {
+      console.log('Voice recording ended')
       setIsRecording(false)
     }
 
@@ -87,54 +95,86 @@ export default function ChatInput({ onSendMessage, disabled }: ChatInputProps) {
   }
 
   return (
-    <div className="flex items-center space-x-3">
-      {/* Input container: pill-shaped with outline on focus */}
-      <div className={cn("flex-1 relative", disabled && "opacity-50 cursor-not-allowed")}>
-        <div className="w-full rounded-full border border-border focus-within:border-primary/70 focus-within:ring-2 focus-within:ring-primary/20 transition-colors duration-200 bg-muted/70 px-4 py-2.5 flex items-center">
-          <textarea
-            ref={textareaRef}
-            value={message}
-            onChange={handleInput}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask about treatments, costs, doctors, or any healthcare question..."
-            className={cn(
-              "flex-1 resize-none bg-transparent outline-none text-foreground placeholder-muted-foreground pr-3 min-h-[40px] md:min-h-[44px] max-h-32 leading-6 text-sm",
-              disabled && "opacity-50",
-            )}
-            rows={1}
-            disabled={disabled}
-            data-testid="message-input"
-            aria-label="Message input"
-          />
+    <div className="space-y-3">
+      {/* Main Input Container */}
+      <div className={cn("relative group", disabled && "opacity-50 cursor-not-allowed")}>
+        <div className="bg-white/95 dark:bg-slate-800/95 rounded-2xl border border-slate-200/50 dark:border-slate-700/50 shadow-lg backdrop-blur-xl hover:shadow-xl transition-all duration-300 group-hover:border-blue-300/50 dark:group-hover:border-blue-600/50">
+          <div className="flex items-end gap-3 p-3">
+            {/* Text Input */}
+            <div className="flex-1">
+              <textarea
+                ref={textareaRef}
+                value={message}
+                onChange={handleInput}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask about treatments, pricing, or book an appointment..."
+                className={cn(
+                  "w-full resize-none bg-transparent outline-none text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 text-sm leading-6 min-h-[24px] max-h-32 transition-all duration-200",
+                  disabled && "opacity-50",
+                )}
+                rows={1}
+                disabled={disabled}
+                data-testid="message-input"
+                aria-label="Message input"
+              />
+            </div>
 
-          {/* Send button: primary circular */}
-          <button
-            onClick={handleSend}
-            disabled={!message.trim() || disabled}
-            className={cn(
-              "ml-2 -mr-1 w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-sm hover:bg-primary/90 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed",
-            )}
-            data-testid="send-button"
-            aria-label="Send message"
-          >
-            <i className="fas fa-paper-plane text-sm" />
-          </button>
+            {/* Voice Input */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleVoiceInput}
+              disabled={disabled}
+              className={cn(
+                "h-9 w-9 rounded-xl transition-all duration-300 shadow-sm hover:shadow-md",
+                isRecording 
+                  ? "bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white" 
+                  : "hover:bg-slate-100 dark:hover:bg-slate-700"
+              )}
+            >
+              {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4 text-slate-500 dark:text-slate-400" />}
+            </Button>
+
+            {/* Send Button */}
+            <Button
+              onClick={handleSend}
+              disabled={!message.trim() || disabled}
+              size="sm"
+              className="h-9 w-9 rounded-xl bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-600 hover:from-blue-600 hover:via-purple-600 hover:to-indigo-700 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:scale-105 active:scale-95"
+            >
+              <Send className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Voice Input Button (separate, green) */}
-      <button
-        onClick={handleVoiceInput}
-        disabled={disabled}
-        className={cn(
-          "w-10 h-10 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full flex items-center justify-center transition-colors duration-200 shadow-md",
-          disabled && "opacity-50 cursor-not-allowed",
-        )}
-        data-testid="voice-button"
-        aria-label={isRecording ? "Stop recording" : "Start voice input"}
-      >
-        <i className={cn("fas", isRecording ? "fa-stop text-white" : "fa-microphone")}></i>
-      </button>
+      {/* Quick Actions */}
+      <div className="flex flex-wrap gap-2 justify-center">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onSendMessage('Book a consultation')}
+          className="rounded-xl text-xs px-3 py-1.5 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border-slate-200/50 dark:border-slate-700/50 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-600 transition-all duration-200 shadow-sm hover:shadow-md"
+        >
+          📅 Book Consultation
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onSendMessage('Show available specialists')}
+          className="rounded-xl text-xs px-3 py-1.5 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border-slate-200/50 dark:border-slate-700/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-300 dark:hover:border-purple-600 transition-all duration-200 shadow-sm hover:shadow-md"
+        >
+          👨⚕️ View Specialists
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onSendMessage('What are the costs?')}
+          className="rounded-xl text-xs px-3 py-1.5 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border-slate-200/50 dark:border-slate-700/50 hover:bg-green-50 dark:hover:bg-green-900/20 hover:border-green-300 dark:hover:border-green-600 transition-all duration-200 shadow-sm hover:shadow-md"
+        >
+          💰 View Pricing
+        </Button>
+      </div>
     </div>
   )
 }

@@ -2,10 +2,13 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { z } from "zod";
 import { mistralService } from "./services/mistral";
+import { llmConfigService } from "./services/llm-config";
 import { healthcareApi } from "./services/healthcare-api";
 import { tavilyService } from "./services/tavily";
 import { citrineContentService } from "./services/citrine-content";
 import { sanitizeForOutput } from "./utils/sanitizer";
+import { llmConfigService } from "./services/llm-config";
+import { DEFAULT_MODELS } from "./services/llm-provider";
 
 const ChatRequestSchema = z.object({
   message: z.string().min(1, "Message cannot be empty"),
@@ -13,9 +16,10 @@ const ChatRequestSchema = z.object({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Chat endpoint
+  // Chat endpoint (fallback for non-streaming)
   app.post("/api/chat", async (req, res) => {
     try {
+      console.log('Non-streaming chat endpoint called');
       const { message, sessionId } = ChatRequestSchema.parse(req.body);
       
       const response = await mistralService.processHealthcareQuery(message);
@@ -35,6 +39,145 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false,
         error: error instanceof Error ? sanitizeForOutput(error.message) : "Internal server error"
       });
+    }
+  });
+
+  // Test streaming endpoint
+  app.get("/api/test-stream", async (req, res) => {
+    try {
+      console.log('Test streaming endpoint called');
+      
+      // Set headers for Server-Sent Events
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Cache-Control'
+      });
+
+      // Send test data
+      res.write(`data: ${JSON.stringify({
+        type: 'metadata',
+        message: 'Test streaming started'
+      })}\n\n`);
+
+      // Send some test chunks
+      const testMessage = "Hello, this is a test streaming response to verify the streaming mechanism works correctly.";
+      const words = testMessage.split(' ');
+      
+      for (let i = 0; i < words.length; i++) {
+        const chunk = i === 0 ? words[i] : ' ' + words[i];
+        res.write(`data: ${JSON.stringify({
+          type: 'content',
+          content: chunk
+        })}\n\n`);
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      // Send completion signal
+      res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+      res.end();
+    } catch (error) {
+      console.error("Test Streaming Error:", error);
+      res.write(`data: ${JSON.stringify({
+        type: 'error',
+        error: 'Test streaming failed'
+      })}\n\n`);
+      res.end();
+    }
+  });
+
+  // Streaming chat endpoint
+  app.post("/api/chat/stream", async (req, res) => {
+    try {
+      console.log('Streaming endpoint called with:', req.body);
+      const { message } = ChatRequestSchema.parse(req.body);
+      
+      // Set headers for Server-Sent Events
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Cache-Control'
+      });
+
+      console.log('Processing streaming query:', message);
+      const streamResponse = await mistralService.processHealthcareQueryStream(message);
+      console.log('Got stream response:', {
+        hasMessageStream: !!streamResponse.messageStream,
+        messageStreamType: typeof streamResponse.messageStream,
+        isAsyncIterable: streamResponse.messageStream && typeof streamResponse.messageStream[Symbol.asyncIterator] === 'function',
+        intent: streamResponse.intent
+      });
+      
+      // Send initial data (treatments, intent)
+      res.write(`data: ${JSON.stringify({
+        type: 'metadata',
+        treatments: streamResponse.treatments,
+        intent: streamResponse.intent,
+        timestamp: new Date().toISOString()
+      })}\n\n`);
+
+      console.log('Starting to stream message content');
+      
+      // Check if messageStream is async iterable before trying to iterate
+      if (!streamResponse.messageStream || typeof streamResponse.messageStream[Symbol.asyncIterator] !== 'function') {
+        console.error('messageStream is not async iterable:', {
+          hasStream: !!streamResponse.messageStream,
+          type: typeof streamResponse.messageStream,
+          hasAsyncIterator: streamResponse.messageStream && typeof streamResponse.messageStream[Symbol.asyncIterator] === 'function'
+        });
+        res.write(`data: ${JSON.stringify({
+          type: 'error',
+          error: 'streamResponse.messageStream is not async iterable'
+        })}\n\n`);
+        res.end();
+        return;
+      }
+      
+      // Stream the message content
+      let chunkCount = 0;
+      try {
+        for await (const chunk of streamResponse.messageStream) {
+          chunkCount++;
+          console.log(`Sending chunk ${chunkCount}:`, chunk.substring(0, 50));
+          res.write(`data: ${JSON.stringify({
+            type: 'content',
+            content: sanitizeForOutput(chunk)
+          })}\n\n`);
+        }
+      } catch (streamError) {
+        console.error('Stream iteration error:', streamError);
+        res.write(`data: ${JSON.stringify({
+          type: 'error',
+          error: streamError instanceof Error ? streamError.message : 'Stream iteration failed'
+        })}\n\n`);
+        res.end();
+        return;
+      }
+
+      console.log(`Streaming completed, sent ${chunkCount} chunks`);
+      // Send completion signal
+      res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+      res.end();
+    } catch (error) {
+      console.error("Streaming Chat API Error:", error);
+      if (!res.headersSent) {
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Cache-Control'
+        });
+      }
+      res.write(`data: ${JSON.stringify({
+        type: 'error',
+        error: error instanceof Error ? sanitizeForOutput(error.message) : "Internal server error"
+      })}\n\n`);
+      res.end();
     }
   });
 
@@ -222,6 +365,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: error instanceof Error ? sanitizeForOutput(error.message) : "Failed to book appointment"
       });
     }
+  });
+
+  // LLM Configuration endpoints
+  app.get("/api/llm/config", (req, res) => {
+    const config = llmConfigService.getConfig();
+    res.json({
+      success: true,
+      data: {
+        provider: config.provider,
+        model: config.model,
+        hasApiKey: !!config.apiKey,
+        usingEnvKey: !config.apiKey.startsWith('sk-') && !config.apiKey.startsWith('mr-')
+      }
+    });
+  });
+
+  app.post("/api/llm/config", (req, res) => {
+    try {
+      const { provider, apiKey, model } = req.body;
+      
+      if (!provider || !apiKey || !model) {
+        return res.status(400).json({
+          success: false,
+          error: "Provider, API key, and model are required"
+        });
+      }
+
+      if (!['openai', 'mistral'].includes(provider)) {
+        return res.status(400).json({
+          success: false,
+          error: "Provider must be 'openai' or 'mistral'"
+        });
+      }
+
+      llmConfigService.updateConfig({ provider, apiKey, model });
+      
+      res.json({
+        success: true,
+        message: "LLM configuration updated successfully"
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: "Failed to update LLM configuration"
+      });
+    }
+  });
+
+  app.get("/api/llm/models", (req, res) => {
+    res.json({
+      success: true,
+      data: DEFAULT_MODELS
+    });
+  });
+
+  // Simple test endpoint
+  app.get("/api/test", (req, res) => {
+    res.json({
+      success: true,
+      message: "Server is working",
+      timestamp: new Date().toISOString()
+    });
   });
 
   // API Health Check

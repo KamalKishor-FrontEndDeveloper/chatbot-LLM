@@ -8,7 +8,6 @@ export class HealthcareApiService {
   private readonly clinicApiUrl = 'https://pmsapi.healthlantern.com/api/organization_chatboard/c9ab83f09006371cb3f745a03b1f8c64';
   private readonly authToken = '1a26495729bbc804007b72e98803cab4';
   private citrineWebsiteContent: string | null = null;
-  private flatTreatmentsCache: HealthcareTreatment[] | null = null;
   
 
 
@@ -25,8 +24,8 @@ export class HealthcareApiService {
     try {
       console.log('Attempting to fetch treatments from:', this.apiUrl);
       
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      // const controller = new AbortController();
+      // const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
       
       let response: Response;
       try {
@@ -36,7 +35,6 @@ export class HealthcareApiService {
             'Accept': 'application/json',
             'User-Agent': 'HealthLantern-ChatBot/1.0'
           },
-          signal: controller.signal
         });
       } catch (err) {
         // handle fetch abort due to timeout
@@ -46,7 +44,7 @@ export class HealthcareApiService {
         }
         throw err;
       } finally {
-        clearTimeout(timeoutId);
+        // clearTimeout(timeoutId);
       }
       
       console.log('API Response status:', response.status);
@@ -148,12 +146,11 @@ export class HealthcareApiService {
   }
 
   private async getFlatTreatments(): Promise<HealthcareTreatment[]> {
-    if (!this.flatTreatmentsCache) {
-      const allTreatments = await this.getAllTreatments();
-      this.flatTreatmentsCache = this.flattenTreatments(allTreatments);
-    }
-    return this.flatTreatmentsCache;
+    const allTreatments = await this.getAllTreatments();
+    return this.flattenTreatments(allTreatments);
   }
+
+
 
   async searchTreatments(query: string): Promise<HealthcareTreatment[]> {
     const flatTreatments = await this.getFlatTreatments();
@@ -446,12 +443,37 @@ export class HealthcareApiService {
 
   private findSpecificTreatment(query: string, flatTreatments: HealthcareTreatment[]): HealthcareTreatment | null {
     const searchTerms = query.toLowerCase();
+    console.log(`🔍 Searching for treatment: "${query}" (normalized: "${searchTerms}")`);
+    
+    // Log available treatments for debugging
+    console.log(`📋 Available treatments (${flatTreatments.length}):`, 
+      flatTreatments.slice(0, 10).map(t => t.t_name).join(', '));
 
     // Remove common words and non-alphanumeric characters, normalize whitespace
     let cleanQuery = searchTerms.replace(/\b(what|is|the|cost|of|price|for|in|treatment|therapy)\b/g, ' ');
     cleanQuery = cleanQuery.replace(/[^a-z0-9\s]/g, ' ');
     cleanQuery = cleanQuery.replace(/\s+/g, ' ').trim();
     const compactClean = cleanQuery.replace(/\s+/g, '');
+    
+    console.log(`🧹 Cleaned query: "${cleanQuery}" (compact: "${compactClean}")`);
+    
+    // Special priority handling for LHR queries
+    if (compactClean === 'lhr' || cleanQuery === 'lhr') {
+      console.log(`🎯 LHR query detected - prioritizing laser hair treatments`);
+      
+      // First try to find exact "laser hair reduction" match
+      let lhrMatch = flatTreatments.find(treatment => {
+        const treatmentName = treatment.t_name?.toLowerCase() || '';
+        return treatmentName.includes('laser hair reduction') || 
+               treatmentName.includes('laser hair removal') ||
+               treatmentName.includes('laser hair');
+      });
+      
+      if (lhrMatch) {
+        console.log(`✅ Found LHR treatment: "${lhrMatch.t_name}"`);
+        return lhrMatch;
+      }
+    }
       
       // Enhanced matching for common treatments
       const treatmentAliases: Record<string, string[]> = {
@@ -474,11 +496,18 @@ export class HealthcareApiService {
         return treatmentName === cleanQuery || treatmentNameCompact === compactClean;
       });
       
+      if (exactMatch) {
+        console.log(`✅ Found exact match: "${exactMatch.t_name}"`);
+        return exactMatch;
+      }
+      
       // Try alias matching
       if (!exactMatch) {
+        console.log(`🔍 Trying alias matching for: "${cleanQuery}"`);
         for (const [key, aliases] of Object.entries(treatmentAliases)) {
           const normKey = key.toLowerCase().replace(/\s+/g, '');
           if (compactClean === normKey || cleanQuery === key) {
+            console.log(`🎯 Found alias key: "${key}" with aliases: [${aliases.join(', ')}]`);
             exactMatch = flatTreatments.find(treatment => {
               const treatmentNameNorm = normalize(treatment.t_name);
               const treatmentNameCompact = compact(treatment.t_name);
@@ -489,7 +518,7 @@ export class HealthcareApiService {
               });
             });
             if (exactMatch) {
-              console.log(`Found treatment via alias: ${exactMatch.t_name} for query: ${key}`);
+              console.log(`✅ Found treatment via alias: "${exactMatch.t_name}" for query: "${key}"`);
               break;
             }
           }
@@ -498,10 +527,19 @@ export class HealthcareApiService {
       
       // Fallback: partial match
       if (!exactMatch) {
+        console.log(`🔍 Trying fallback partial matching for: "${cleanQuery}"`);
         exactMatch = flatTreatments.find(treatment => {
           const treatmentName = treatment.t_name?.toLowerCase() || '';
           return treatmentName.includes(cleanQuery) || cleanQuery.includes(treatmentName);
         });
+        
+        if (exactMatch) {
+          console.log(`⚠️ Found fallback match: "${exactMatch.t_name}" (may not be accurate)`);
+        }
+      }
+      
+      if (!exactMatch) {
+        console.log(`❌ No treatment found for query: "${query}"`);
       }
       
       return exactMatch || null;

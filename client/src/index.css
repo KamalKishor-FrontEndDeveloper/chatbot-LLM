@@ -195,3 +195,23 @@
 .scrollbar-thumb-muted::-webkit-scrollbar-thumb {
   background: hsl(var(--muted));
 }
+
+/* UI tweaks for chat input and message bubbles to match reference */
+.chat-input-float {
+  backdrop-filter: blur(6px);
+  background-color: rgba(255,255,255,0.75);
+}
+
+.user-bubble-strong {
+  background-color: var(--foreground);
+  color: white;
+}
+
+.send-button-rotate i {
+  transform: rotate(45deg);
+}
+
+/* subtle elevated card for assistant messages */
+.assistant-card-elevated {
+  box-shadow: 0 8px 20px rgba(16,24,40,0.06);
+}
