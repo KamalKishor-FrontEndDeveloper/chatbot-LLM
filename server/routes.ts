@@ -4,6 +4,7 @@ import { z } from "zod";
 import { mistralService } from "./services/mistral";
 import { healthcareApi } from "./services/healthcare-api";
 import { tavilyService } from "./services/tavily";
+import { citrineContentService } from "./services/citrine-content";
 import { sanitizeForOutput } from "./utils/sanitizer";
 
 const ChatRequestSchema = z.object({
@@ -138,6 +139,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Dynamic greeting generated from Citrine content
+  app.get('/api/greeting', async (req, res) => {
+    try {
+      const mdContent = await citrineContentService.getCitrineContent();
+
+      // Small heuristic extraction for greeting pieces
+      const doctorMatch = mdContent.match(/dr\.?\s*niti\s*gaur/i);
+      const doctorLine = doctorMatch ? 'Led by Dr. Niti Gaur, MD (Dermatology).' : '';
+
+      const candidateServices = [
+        'Hydrafacial MD', 'Chemical Peels', 'Laser Hair Reduction', 'Dermal Fillers',
+        'Anti Wrinkle Injection', 'Microneedling', 'HIFU', 'Photofacial', 'Tattoo Removal',
+        'Acne Treatment', 'Pigmentation Treatment', 'Hair Loss Treatment', 'Body Contouring'
+      ];
+
+      const foundServices = candidateServices.filter(s => mdContent.toLowerCase().includes(s.toLowerCase()));
+      const servicesSnippet = foundServices.length > 0 ? foundServices.slice(0,5).join(', ') : 'advanced dermatology and aesthetic treatments';
+
+      const message = `Welcome to Citrine Clinic — where dermatology expertise meets aesthetics. ${doctorLine} We offer ${servicesSnippet}. How can I assist you today with treatments, pricing, or appointments?`;
+
+      res.json({ success: true, data: { message } });
+    } catch (error) {
+      console.error('Greeting generation failed:', error);
+      res.json({ success: true, data: { message: "Welcome to Citrine Clinic. How can I help you today?" } });
+    }
+  });
+
   // Search and extract
   app.get("/api/search-extract", async (req, res) => {
     try {
@@ -192,6 +220,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({
         success: false,
         error: error instanceof Error ? sanitizeForOutput(error.message) : "Failed to book appointment"
+      });
+    }
+  });
+
+  // API Health Check
+  app.get("/api/health", async (req, res) => {
+    try {
+      const healthStatus = {
+        server: "OK",
+        timestamp: new Date().toISOString(),
+        apis: {
+          treatments: "Unknown",
+          doctors: "Unknown",
+          clinic: "Unknown"
+        }
+      };
+
+      // Test treatments API
+      try {
+        const treatments = await healthcareApi.getAllTreatments();
+        healthStatus.apis.treatments = treatments.length > 0 ? "OK" : "Empty";
+      } catch (error) {
+        healthStatus.apis.treatments = "Failed";
+      }
+
+      // Test doctors API
+      try {
+        const doctors = await healthcareApi.getAllDoctors();
+        healthStatus.apis.doctors = doctors.length > 0 ? "OK" : "Empty";
+      } catch (error) {
+        healthStatus.apis.doctors = "Failed";
+      }
+
+      // Test clinic API
+      try {
+        const clinic = await healthcareApi.getClinicInfo();
+        healthStatus.apis.clinic = clinic ? "OK" : "Empty";
+      } catch (error) {
+        healthStatus.apis.clinic = "Failed";
+      }
+
+      res.json({
+        success: true,
+        data: healthStatus
+      });
+    } catch (error) {
+      console.error("Health Check Error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Health check failed"
       });
     }
   });

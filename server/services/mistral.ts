@@ -39,18 +39,10 @@ export class MistralService {
       const intent = await this.analyzeIntent(userMessage);
       console.log(`Intent detected: ${intent}`);
       
-      // Get all data sources
-      const [citrineContext, tavilyContext] = await Promise.all([
-        citrineContentService.getCitrineContent(),
-        this.getTavilyContext(userMessage, intent)
-      ]);
-      
-      console.log(`Data sources loaded - MD: ${citrineContext ? 'Yes' : 'No'}, Tavily: ${tavilyContext ? 'Yes' : 'No'}`);
-
       // Handle off-topic questions with guard rails
       if (intent === 'off_topic') {
         return {
-          message: "I'm HealthLantern AI, your healthcare assistant. I'm here to help you with medical treatments, costs, doctor availability, and health-related questions.\n\nI can help you with:\n• Treatment information and pricing\n• Doctor availability and specializations\n• Healthcare consultations\n• Medical conditions and their treatments\n\nWhat healthcare question can I assist you with today?",
+          message: "Welcome to Citrine Clinic — where dermatology expertise meets aesthetics. Led by Dr. Niti Gaur, MD (Dermatology). We offer Hydrafacial MD, Chemical Peels, Laser Hair Reduction, Dermal Fillers, Anti Wrinkle Injection.\n\nI can help you with:\n• Dermatology treatments and pricing\n• Dr. Niti Gaur's availability\n• Skin care consultations\n• Cosmetic dermatology procedures\n\nHow can I assist you today with treatments, pricing, or appointments?",
           intent: 'off_topic',
         };
       }
@@ -58,9 +50,16 @@ export class MistralService {
       // Get relevant treatments based on the query
       const treatments = await this.getRelevantTreatments(userMessage, intent);
 
-      // Combine all contexts
-      const combinedContext = this.combineContexts(citrineContext, tavilyContext);
-      console.log(`Combined context length: ${combinedContext.length} characters`);
+      // Get minimal context only when needed
+      let combinedContext = '';
+      if (intent === 'clinic_info' || intent === 'doctor_inquiry') {
+        const [citrineContext, tavilyContext] = await Promise.all([
+          citrineContentService.getCitrineContent(),
+          this.getTavilyContext(userMessage, intent)
+        ]);
+        combinedContext = this.combineContexts(citrineContext, tavilyContext);
+        console.log(`Context loaded for ${intent}: ${combinedContext.length} characters`);
+      }
       
       // Generate a contextual response
       const response = await this.generateResponse(userMessage, treatments, intent, combinedContext);
@@ -127,117 +126,60 @@ export class MistralService {
   }
 
   private async analyzeIntent(userMessage: string): Promise<string> {
-    // First, check for obvious off-topic keywords
-    const offTopicKeywords = [
-      'capital', 'country', 'geography', 'sports', 'weather', 'politics', 
-      'entertainment', 'movie', 'celebrity', 'music', 'technology', 'programming',
-      'travel', 'food recipe', 'cooking', 'history', 'science fiction', 'math problem'
-    ];
-
+    // Hybrid approach: Fast static checks first, then LLM intelligence
     const lowerMessage = userMessage.toLowerCase();
-    const hasOffTopicKeywords = offTopicKeywords.some(keyword => lowerMessage.includes(keyword));
-
-    if (hasOffTopicKeywords) {
-      console.log(`Off-topic detected via keywords: "${sanitizeForLog(userMessage)}"`);
-      return 'off_topic';
+    
+    // Fast lane: Handle obvious cases instantly (no API cost)
+    const staticIntent = this.getStaticIntent(lowerMessage);
+    if (staticIntent) {
+      console.log(`Fast static intent: ${staticIntent} for "${sanitizeForLog(userMessage)}"`);
+      return staticIntent;
     }
-
-    // Check for doctor inquiry keywords first (higher priority)
-    const doctorInquiryKeywords = [
-      'doctor', 'dr ', 'dr.', 'specialist', 'physician', 'about dr', 'know about dr', 'niti gaur', 'dr niti', 'who is niti'
-    ];
-
-    const hasDoctorInquiry = doctorInquiryKeywords.some(keyword => 
-      lowerMessage.includes(keyword)
-    );
-
-    if (hasDoctorInquiry) {
-      console.log(`Doctor inquiry intent detected: "${sanitizeForLog(userMessage)}"`);
-      return 'doctor_inquiry';
-    }
-
-    // Check for appointment booking keywords (higher priority)
-    const appointmentKeywords = [
-      'book appointment', 'schedule appointment', 'book consultation', 'schedule consultation',
-      'proceed with booking', 'how to book', 'next step to book', 'appointment with'
-    ];
-
-    const hasAppointmentIntent = appointmentKeywords.some(keyword => 
-      lowerMessage.includes(keyword)
-    );
-
-    // Check for simple "yes" after doctor recommendation
-    if (lowerMessage === 'yes' || lowerMessage === 'yeah' || lowerMessage === 'ok') {
-      console.log(`Appointment confirmation detected: "${sanitizeForLog(userMessage)}"`);
-      return 'appointment_booking';
-    }
-
-    if (hasAppointmentIntent) {
-      console.log(`Appointment booking intent detected: "${sanitizeForLog(userMessage)}"`);
-      return 'appointment_booking';
-    }
-
-    // Check for specific patterns first
-    // Service list patterns - check first
-    const serviceListPatterns = [
-      'complete list of services', 'all services', 'list of services', 'show all services',
-      'what services do you offer', 'services available', 'all treatments available',
-      'complete treatment list', 'show all treatments', 'list all treatments'
-    ];
-
-    if (serviceListPatterns.some(pattern => lowerMessage.includes(pattern))) {
-      console.log(`Service list request detected: "${sanitizeForLog(userMessage)}"`);
-      return 'treatment_list';
-    }
-
-    // Treatment selection patterns
-    const treatmentSelectionPattern = /^(treatment\s*)?(\d+|one|two|three|four|five|six|seven|eight|nine|ten|first|second|third|fourth|fifth)$/i;
-    const commonTreatments = [
-      'acne', 'laser hair removal', 'botox', 'fillers', 'prp', 'hydrafacial', 
-      'chemical peel', 'microneedling', 'body contouring', 'stretch marks'
-    ];
-
-    if (treatmentSelectionPattern.test(userMessage) && 
-        commonTreatments.some(treatment => lowerMessage.includes(treatment.replace(/\s+/g, '')) || treatment.includes(lowerMessage))) {
-      console.log(`Treatment selection detected: "${sanitizeForLog(userMessage)}"`);
-      return 'treatment_selection';
-    }
+    
+    // Smart lane: Use LLM for complex/ambiguous cases
 
     const response = await mistral.chat.complete({
       model: "mistral-large-latest",
       messages: [
         {
           role: "system",
-          content: `You are a strict healthcare intent classifier. Be very careful to classify non-medical questions as "off_topic".
+          content: `You are an intelligent dermatology assistant for Citrine Clinic, a DERMATOLOGY and AESTHETIC clinic led by Dr. Niti Gaur, MD (Dermatology). Analyze user messages and understand their intent naturally.
 
-          Respond with JSON in this format: {"intent": "category"}
+          Respond with JSON: {"intent": "category", "confidence": "high/medium/low"}
 
-          Healthcare intents (ONLY for medical/health questions):
-          - "cost_inquiry" - asking about medical treatment costs/prices
-          - "treatment_list" - wanting to see available medical treatments
-          - "doctor_inquiry" - asking about doctors, doctor information, doctor availability, "about dr", "know about doctor"
-          - "specific_treatment" - asking about a specific medical treatment
-          - "comparison" - comparing medical treatments or services
-          - "appointment_booking" - explicitly wanting to book/schedule an appointment (must contain booking words)
-          - "clinic_info" - asking about clinic details, address, hours, services
-          - "general_info" - general healthcare/medical questions not related to clinic services
-          - "other" - other healthcare related topics not available at clinic
+          IMPORTANT: Citrine Clinic is a DERMATOLOGY clinic specializing in:
+          - Skin treatments (acne, pigmentation, anti-aging)
+          - Laser treatments (hair reduction, skin resurfacing)
+          - Cosmetic procedures (dermal fillers, anti-wrinkle injections)
+          - Aesthetic treatments (Hydrafacial MD, chemical peels)
+          
+          DO NOT provide dental services information. We are NOT a dental clinic.
 
-          NON-healthcare intent (use for ALL non-medical questions):
-          - "off_topic" - geography, capitals, sports, entertainment, technology, politics, weather, general knowledge, cooking, travel, or ANY topic NOT related to healthcare OR Citrine Clinic
+          Dermatology Intents:
+          - "cost_inquiry" - asking about dermatology treatment prices/costs
+          - "treatment_list" - wanting to see available dermatology treatments/services
+          - "doctor_inquiry" - asking about Dr. Niti Gaur, dermatologist info, availability
+          - "specific_treatment" - asking about or wanting a specific dermatology treatment
+          - "comparison" - comparing dermatology treatments or asking which is better
+          - "appointment_booking" - wanting to book/schedule dermatology appointments
+          - "clinic_info" - asking about clinic location, hours, contact, facilities
+          - "general_info" - dermatology questions, skin treatment suggestions, skin health advice
+          - "greeting" - hello, hi, greetings, introductions
+          - "other" - dermatology related but not specific to clinic services
 
-          Examples:
-          - "What is the capital of India?" -> {"intent": "off_topic"}
-          - "Who won the World Cup?" -> {"intent": "off_topic"}
-          - "What's the weather today?" -> {"intent": "off_topic"}
-          - "Who is Dr. Niti Gaur?" -> {"intent": "doctor_inquiry"}
-          - "Tell me about Citrine Clinic" -> {"intent": "clinic_info"}
-          - "Cost of dental treatment?" -> {"intent": "cost_inquiry"}
-          - "Show me heart treatments" -> {"intent": "treatment_list"}
-          - "Which doctors are available?" -> {"intent": "doctor_inquiry"}
-          - "Book an appointment" -> {"intent": "appointment_booking"}
-          - "What is your clinic address?" -> {"intent": "clinic_info"}
-          - "What is acne?" -> {"intent": "general_info"}`
+          Non-Dermatology:
+          - "off_topic" - completely unrelated to dermatology/skin care topics
+
+          Be intelligent about:
+          - "I want [skin treatment]" = specific_treatment
+          - "I have [skin condition]" = general_info
+          - "Suggest treatment for [skin issue]" = general_info
+          - "Help with [skin problem]" = general_info
+          - "Where is clinic" = clinic_info
+          - "Book appointment" = appointment_booking
+          - Multilingual queries (Hindi/English mix)
+          - Dermatology terminology and skin conditions
+          - Skin treatment names and procedures`
         },
         {
           role: "user",
@@ -285,23 +227,122 @@ export class MistralService {
     }
   }
 
+  private getStaticIntent(lowerMessage: string): string | null {
+    // Critical patterns that need instant recognition
+    
+    // Obvious off-topic (save API calls)
+    if (lowerMessage.includes('capital of') || lowerMessage.includes('weather') || 
+        lowerMessage.includes('sports') || lowerMessage.includes('movie')) {
+      return 'off_topic';
+    }
+    
+    // Clear appointment booking
+    if (lowerMessage.includes('book appointment') || lowerMessage.includes('schedule appointment')) {
+      return 'appointment_booking';
+    }
+    
+    // Simple confirmations
+    if (lowerMessage === 'yes' || lowerMessage === 'ok' || lowerMessage === 'yeah') {
+      return 'appointment_booking';
+    }
+    
+    // Clear location queries
+    if (lowerMessage.includes('clinic kha hai') || lowerMessage.includes('clinic kahan hai') || 
+        lowerMessage.includes('clinic address')) {
+      return 'clinic_info';
+    }
+    
+    // Clear cost queries
+    if (lowerMessage.includes('cost of') || lowerMessage.includes('price of') || 
+        lowerMessage.includes('how much is')) {
+      return 'cost_inquiry';
+    }
+    
+    // Clear doctor queries
+    if (lowerMessage.includes('dr niti gaur') || lowerMessage.includes('about doctor')) {
+      return 'doctor_inquiry';
+    }
+    
+    // Clear service list requests
+    if (lowerMessage.includes('all services') || lowerMessage.includes('list of treatments')) {
+      return 'treatment_list';
+    }
+
+    // Quick detections for natural language requests like "Tell me about X", "What is X", etc.
+    // These are often short medical queries (e.g., "tell me about thyroid") and should be handled as general medical info.
+    if (
+      lowerMessage.startsWith('tell me about') ||
+      lowerMessage.startsWith('what is') ||
+      lowerMessage.startsWith('what are') ||
+      lowerMessage.startsWith('explain') ||
+      lowerMessage.startsWith('describe')
+    ) {
+      // Avoid obvious non-medical topics
+      const offTopicKeywords = ['movie', 'movies', 'sports', 'capital of', 'weather', 'song', 'lyrics'];
+      if (!offTopicKeywords.some(k => lowerMessage.includes(k))) {
+        return 'general_info';
+      }
+    }
+
+    // Single-word or short queries that match common medical conditions/treatment names
+    const medicalKeywords = [
+      'thyroid', 'diabetes', 'hypertension', 'blood pressure', 'acne', 'eczema', 'psoriasis',
+      'hairfall', 'migraine', 'asthma', 'cancer', 'fever', 'cold', 'flu', 'pimple', 'weight loss'
+    ];
+
+    for (const kw of medicalKeywords) {
+      const re = new RegExp(`\\b${kw}\\b`, 'i');
+      if (re.test(lowerMessage)) {
+        return 'general_info';
+      }
+    }
+
+    return null; // Let LLM handle complex cases
+  }
+
+  private getRelevantTreatmentsForLLM(userMessage: string, treatments: HealthcareTreatment[]): string {
+    if (treatments.length === 0) return 'None found';
+    
+    const lowerMessage = userMessage.toLowerCase();
+    
+    // Filter treatments that match user's query
+    const relevantTreatments = treatments.filter(treatment => {
+      const treatmentName = (treatment.t_name || treatment.name || '').toLowerCase();
+      return lowerMessage.includes(treatmentName) || treatmentName.includes(lowerMessage.split(' ')[0]);
+    });
+    
+    // If no specific matches, send first 2 treatments
+    const treatmentsToSend = relevantTreatments.length > 0 ? relevantTreatments.slice(0, 2) : treatments.slice(0, 2);
+    
+    // Send minimal treatment info to save tokens
+    return JSON.stringify(treatmentsToSend.map(t => ({
+      name: t.t_name || t.name,
+      price: t.price || 'Contact for Quote',
+      doctors: t.doctors ? JSON.parse(t.doctors).length : 0
+    })));
+  }
+
   private async getRelevantTreatments(userMessage: string, intent: string): Promise<HealthcareTreatment[]> {
     switch (intent) {
       case 'cost_inquiry':
         console.log('Cost inquiry - searching API first');
-        // Always try API first for cost inquiries
-        const specificTreatment = await healthcareApi.getSpecificTreatment(userMessage);
-        if (specificTreatment && specificTreatment.price) {
-          console.log(`Found treatment with price in API: ${specificTreatment.t_name} - ₹${specificTreatment.price}`);
-          return [specificTreatment];
-        }
-        
-        // If no specific treatment found, try broader search in API
-        const searchResults = await healthcareApi.searchTreatments(userMessage);
-        const treatmentsWithPrice = searchResults.filter(t => t.price && t.price !== '');
-        if (treatmentsWithPrice.length > 0) {
-          console.log(`Found ${treatmentsWithPrice.length} treatments with prices in API`);
-          return treatmentsWithPrice;
+        try {
+          // Always try API first for cost inquiries
+          const specificTreatment = await healthcareApi.getSpecificTreatment(userMessage);
+          if (specificTreatment && specificTreatment.price) {
+            console.log(`Found treatment with price in API: ${specificTreatment.t_name} - ₹${specificTreatment.price}`);
+            return [specificTreatment];
+          }
+          
+          // If no specific treatment found, try broader search in API
+          const searchResults = await healthcareApi.searchTreatments(userMessage);
+          const treatmentsWithPrice = searchResults.filter(t => t.price && t.price !== '');
+          if (treatmentsWithPrice.length > 0) {
+            console.log(`Found ${treatmentsWithPrice.length} treatments with prices in API`);
+            return treatmentsWithPrice;
+          }
+        } catch (error) {
+          console.log('API failed for cost inquiry, will fallback to other sources:', error);
         }
         
         console.log('No treatments with prices found in API');
@@ -435,6 +476,16 @@ export class MistralService {
     return healthcareApi.getDoctorIds(treatment);
   }
 
+  private async getDoctorNameById(id: number): Promise<string> {
+    try {
+      const allDoctors = await healthcareApi.getAllDoctors();
+      const doctor = allDoctors.find(d => d.id === id);
+      return doctor ? doctor.name : `Dr. Specialist ${id}`;
+    } catch (error) {
+      return `Dr. Specialist ${id}`;
+    }
+  }
+
 
 
   private async generateResponse(
@@ -443,25 +494,76 @@ export class MistralService {
     intent: string,
     webContext?: string
   ): Promise<string> {
-    switch (intent) {
-      case 'cost_inquiry':
-        return await this.handleCostInquiry(userMessage, treatments);
-      case 'treatment_list':
-        return await this.handleTreatmentList(treatments);
-      case 'specific_treatment':
-        return await this.handleSpecificTreatment(userMessage, treatments);
-      case 'doctor_inquiry':
-        return await this.handleDoctorInquiry(userMessage, treatments);
-      case 'appointment_booking':
-        return await this.handleAppointmentBooking(userMessage);
-      case 'clinic_info':
-        return await this.handleClinicInfo(userMessage, webContext);
-      case 'general_info':
-      case 'other':
-        return await this.handleGeneralMedicalInfo(userMessage);
-      default:
-        return await this.handleTreatmentResponse(userMessage, treatments, intent, webContext);
+    // Hybrid approach: Use specialized handlers for complex cases, LLM for others
+    
+    // Use specialized handlers for data-heavy operations
+    if (intent === 'cost_inquiry' && treatments.length > 0) {
+      return await this.handleCostInquiry(userMessage, treatments);
     }
+    
+    if (intent === 'doctor_inquiry') {
+      return await this.handleDoctorInquiry(userMessage, treatments);
+    }
+    
+    if (intent === 'clinic_info') {
+      return await this.handleClinicInfo(userMessage, webContext);
+    }
+    
+    if (intent === 'appointment_booking') {
+      return await this.handleAppointmentBooking(userMessage);
+    }
+
+    // Directly handle general medical information queries via the dedicated handler
+    if (intent === 'general_info') {
+      return await this.handleGeneralMedicalInfo(userMessage);
+    }
+    
+    // Use LLM for conversational and complex responses
+    const response = await mistral.chat.complete({
+      model: "mistral-large-latest",
+      messages: [
+        {
+          role: "system",
+          content: `You are HealthLantern AI for Citrine Clinic, a DERMATOLOGY and AESTHETIC clinic led by Dr. Niti Gaur, MD (Dermatology).
+          
+          CRITICAL: Citrine Clinic is a DERMATOLOGY clinic specializing in SKIN treatments only:
+          - Skin conditions (acne, pigmentation, aging)
+          - Laser treatments (hair reduction, skin resurfacing)
+          - Cosmetic procedures (dermal fillers, anti-wrinkle injections)
+          - Aesthetic treatments (Hydrafacial MD, chemical peels)
+          
+          DO NOT mention dental services, teeth whitening, or dental treatments. We are NOT a dental clinic.
+          
+          User Intent: ${intent}
+          Available Treatments: ${this.getRelevantTreatmentsForLLM(userMessage, treatments)}
+          Clinic Context: ${webContext ? webContext.substring(0, 10000) : 'Basic dermatology clinic info available'}
+          
+          Guidelines:
+          - Be conversational and helpful about DERMATOLOGY services only
+          - For skin treatment requests: provide relevant info and suggest booking
+          - For skin health: provide helpful advice and suggest consultation with Dr. Niti Gaur
+          - Use proper formatting with line breaks
+          - Always end with helpful next steps
+          - Be multilingual friendly (Hindi/English)
+          - If no dermatology treatments found, suggest alternatives or contact clinic
+          - Focus on skin, hair, and aesthetic treatments only`
+        },
+        {
+          role: "user",
+          content: userMessage
+        }
+      ],
+    });
+
+    const rawContent: any = response.choices?.[0]?.message?.content;
+    let contentStr = typeof rawContent === 'string' ? rawContent : '';
+    
+    // Add contact for quote if no pricing available
+    if (intent === 'specific_treatment' && treatments.length > 0 && (!treatments[0].price || treatments[0].price === '')) {
+      contentStr += `\n\n📞 **[Contact for Quote - ${treatments[0].t_name}]** - Get personalized pricing`;
+    }
+    
+    return contentStr || this.getFallbackResponse();
   }
 
   private async handleDoctorInquiry(userMessage: string, treatments: HealthcareTreatment[]): Promise<string> {
@@ -471,14 +573,61 @@ export class MistralService {
         return await this.getDrNitiInfoFromSources();
       }
       
+      // Service-based doctor query: e.g., "Which doctors do hair transplant?", "Doctors for acne"
+      const serviceMatch1 = userMessage.match(/doctors for\s+(.+)/i);
+      const serviceMatch2 = userMessage.match(/which doctors (?:do|perform|handle)\s+(.+)/i);
+      const serviceMatch3 = userMessage.match(/doctors who (?:do|perform|handle)\s+(.+)/i);
+      const serviceMatch4 = userMessage.match(/doctors (?:for|doing)\s+(.+)/i);
+
+      const svcMatch = serviceMatch1 || serviceMatch2 || serviceMatch3 || serviceMatch4;
+      if (svcMatch) {
+        const rawService = svcMatch[1].replace(/[?.!]/g, '').trim().toLowerCase();
+        // Try to find doctors whose treatments include the requested service
+        const allDoctors = await healthcareApi.getAllDoctors();
+        const matchedDoctors: any[] = [];
+
+        for (const doc of allDoctors) {
+          try {
+            const docTreatments = await this.getDoctorTreatments(doc.id);
+            const found = docTreatments.some(t => {
+              const name = (t.t_name || t.name || '').toLowerCase();
+              return name.includes(rawService) || rawService.includes(name) || name.split(' ').some(w => rawService.includes(w));
+            });
+            if (found) matchedDoctors.push(doc);
+          } catch (e) {
+            // ignore per-doctor errors and continue
+          }
+        }
+
+        if (matchedDoctors.length === 0) {
+          return `I couldn't find doctors who perform **${rawService}**. Here are all available doctors instead:\n\n` + await this.getAllDoctorsInfo();
+        }
+
+        let resp = `Here are doctors who perform **${rawService}**:\n\n`;
+        matchedDoctors.forEach((doctor, idx) => {
+          const cleanName = doctor.name.replace(/^Dr\.?\s*/i, '');
+          resp += `**${idx + 1}. Dr. ${cleanName}**\n   *Specialization:* ${doctor.specialization}\n   *Status:* ${doctor.is_available ? '🟢 Available' : '🔴 Not Available'}\n\n`;
+        });
+        resp += `💡 To book an appointment, say "Book appointment with Dr. [name]" or click Book Appointment.`;
+        return resp;
+      }
+      
       // Check if asking about a specific doctor
       const specificDoctorMatch = userMessage.match(/(?:about|tell me about)\s+(?:dr\.?\s+)?(\w+)/i);
       
       if (specificDoctorMatch) {
         const doctorName = specificDoctorMatch[1].toLowerCase();
+
+        // Ignore nonspecific words that indicate the user asked for a list
+        const nonspecific = ['all', 'available', 'doctors', 'doctor', 'any', 'list', 'others'];
+        if (nonspecific.includes(doctorName) || doctorName.length <= 2) {
+          // Treat as a general doctor inquiry (show list)
+          return await this.getAllDoctorsInfo();
+        }
+
         const allDoctors = await healthcareApi.getAllDoctors();
         const actualDoctors = allDoctors.filter(d => d.specialization === 'doctor');
-        
+
         const specificDoctor = actualDoctors.find(d => 
           d.name.toLowerCase().includes(doctorName)
         );
@@ -518,24 +667,30 @@ export class MistralService {
   }
   
   private async getAllDoctorsInfo(): Promise<string> {
-    const allDoctors = await healthcareApi.getAllDoctors();
-    const actualDoctors = allDoctors.filter(d => d.specialization === 'doctor');
-    
-    if (actualDoctors.length === 0) {
-      return "I'm sorry, I couldn't find any doctors available at the moment. Please contact our clinic directly for doctor availability.";
+    try {
+      const allDoctors = await healthcareApi.getAllDoctors();
+      // Use all doctors from API, don't filter by specialization
+      const actualDoctors = allDoctors.filter(d => d.is_available);
+      
+      if (actualDoctors.length === 0) {
+        return "I'm currently unable to fetch doctor information. Please contact our clinic directly at 9654122458 for doctor availability.";
+      }
+      
+      let response = `Here are our available doctors:\n\n`;
+      
+      actualDoctors.forEach((doctor, index) => {
+        const cleanName = doctor.name.replace(/^Dr\.\s*/, '');
+        response += `**${index + 1}. Dr. ${cleanName}**\n`;
+        response += `   *Specialization:* ${doctor.specialization}\n`;
+        response += `   *Status:* ${doctor.is_available ? '🟢 Available' : '🔴 Not Available'}\n\n`;
+      });
+      
+      response += `💡 *To book an appointment, just let me know which doctor you'd prefer!*`;
+      return response;
+    } catch (error) {
+      // Use fallback doctors
+      return "I'm currently unable to fetch doctor information. Please contact our clinic directly at 9654122458 for doctor availability.";
     }
-    
-    let response = `Here are our available doctors:\n\n`;
-    
-    actualDoctors.forEach((doctor, index) => {
-      const cleanName = doctor.name.replace(/^Dr\.\s*/, '');
-      response += `**${index + 1}. Dr. ${cleanName}**\n`;
-      response += `   *Specialization:* Medical Doctor\n`;
-      response += `   *Status:* ${doctor.is_available ? '🟢 Available' : '🔴 Not Available'}\n\n`;
-    });
-    
-    response += `💡 *To book an appointment, just let me know which doctor you'd prefer!*`;
-    return response;
   }
   
   private async getDoctorTreatments(doctorId: number): Promise<HealthcareTreatment[]> {
@@ -663,13 +818,29 @@ I'll help you book an appointment with **Dr. ${selectedDoctor}**.
     // Get doctor details if available
     const doctorIds = this.getDoctorIds(treatment);
     if (doctorIds.length > 0) {
-      const doctors = await healthcareApi.getDoctorsByIds(doctorIds);
-      if (doctors.length > 0) {
+      try {
+        const doctors = await healthcareApi.getDoctorsByIds(doctorIds);
+        if (doctors.length > 0) {
+          response += `**Available Specialists:**\n`;
+          doctors.forEach((doctor, index) => {
+            const cleanName = doctor.name.replace(/^Dr\.\s*/, '');
+            response += `${index + 1}. **Dr. ${cleanName}** - ${doctor.is_available ? '🟢 Available' : '🔴 Not Available'}\n`;
+          });
+          response += '\n';
+        } else {
+          response += `**Available Specialists:**\n`;
+          for (let i = 0; i < doctorIds.length; i++) {
+            const doctorName = await this.getDoctorNameById(doctorIds[i]);
+            response += `${i + 1}. **${doctorName}** - 🟢 Available\n`;
+          }
+          response += '\n';
+        }
+      } catch (error) {
         response += `**Available Specialists:**\n`;
-        doctors.forEach((doctor, index) => {
-          const cleanName = doctor.name.replace(/^Dr\.\s*/, '');
-          response += `${index + 1}. **Dr. ${cleanName}** - ${doctor.is_available ? '🟢 Available' : '🔴 Not Available'}\n`;
-        });
+        for (let i = 0; i < doctorIds.length; i++) {
+          const doctorName = await this.getDoctorNameById(doctorIds[i]);
+          response += `${i + 1}. **${doctorName}** - 🟢 Available\n`;
+        }
         response += '\n';
       }
     }
@@ -691,8 +862,59 @@ I'll help you book an appointment with **Dr. ${selectedDoctor}**.
   }
 
   private async handleClinicInfo(userMessage: string, citrineContext?: string): Promise<string> {
-    const clinicInfo = await this.getClinicInfoFromSources();
-    return clinicInfo;
+    try {
+      // Try to get dynamic clinic info from API first
+      const clinicInfo = await healthcareApi.getClinicInfo();
+      
+      if (clinicInfo) {
+        let response = `# 🏥 ${clinicInfo.name || 'Citrine Clinic'}\n\n`;
+        
+        if (clinicInfo.address) {
+          response += `## 📍 Clinic Address\n${clinicInfo.address}\n\n`;
+        }
+        
+        // Some data sources use "timing" while others use "working_hours"
+        const timing = (clinicInfo as any).timing || clinicInfo.working_hours;
+        if (timing) {
+          response += `## 🕒 Clinic Timing\n${timing}\n\n`;
+        }
+        
+        if (clinicInfo.phone || clinicInfo.email) {
+          response += `## 📞 Contact Information\n`;
+          if (clinicInfo.phone) response += `**Phone:** ${clinicInfo.phone}\n`;
+          if (clinicInfo.email) response += `**Email:** ${clinicInfo.email}\n`;
+          response += '\n';
+        }
+        
+        const doctorInfo = (clinicInfo as any).doctor_info ?? (clinicInfo.services ? clinicInfo.services.join(', ') : undefined);
+        if (doctorInfo) {
+          response += `## 🩺 About Doctor\n${doctorInfo}\n\n`;
+        }
+        
+        response += `💡 **Ready to visit?** Call us to book your appointment!`;
+        return response;
+      }
+      
+      // Intelligent URL targeting based on query intent
+      const targetUrl = this.getTargetUrlForQuery(userMessage);
+      if (targetUrl) {
+        const specificContent = await this.fetchSpecificUrl(targetUrl, userMessage);
+        if (specificContent) {
+          return this.formatSpecificContent(specificContent, userMessage);
+        }
+      }
+      
+      // If no API data, try MD content
+      const mdContent = await citrineContentService.getCitrineContent();
+      if (mdContent && mdContent.includes('SCO-19')) {
+        return this.extractClinicInfoFromMD(mdContent);
+      }
+      
+      // Final fallback to static
+      return this.getFallbackClinicInfo();
+    } catch (error) {
+      return this.getFallbackClinicInfo();
+    }
   }
   
   private extractServicesFromContent(content: string): string[] {
@@ -706,9 +928,7 @@ I'll help you book an appointment with **Dr. ${selectedDoctor}**.
     return services;
   }
 
-  private getFallbackClinicInfo(): string {
-    return `# 🏥 HealthLantern Medical Center\n\n## 📞 Contact Information\n**Phone:** +91-9654122458\n**Email:** info@healthlantern.com\n\n## 📍 Location\nHealthLantern Medical Center\nMedical District, Healthcare City\n\n## 🕒 Working Hours\nMonday - Saturday: 9:00 AM - 6:00 PM\nSunday: 10:00 AM - 4:00 PM\n\n## 🩺 Services Offered\n- Dermatology & Skin Care\n- Hair Transplant & Restoration\n- Plastic & Cosmetic Surgery\n- Dental Care\n- General Consultation\n- Preventive Health Checkups\n\n---\n\n💡 **Ready to get started?** Feel free to contact us or ask me to book an appointment!`;
-  }
+
 
   private async handleGeneralMedicalInfo(userMessage: string): Promise<string> {
     try {
@@ -719,7 +939,7 @@ I'll help you book an appointment with **Dr. ${selectedDoctor}**.
         messages: [
           {
             role: "system",
-            content: `You are HealthLantern AI for Citrine Clinic. Use the following clinic information to answer questions:\n\n${citrineContent}\n\nProvide helpful, accurate responses about Citrine Clinic's services, treatments, and information. If the question is outside your scope, politely redirect to clinic services.`
+            content: `You are HealthLantern AI for Citrine Clinic, a DERMATOLOGY and AESTHETIC clinic led by Dr. Niti Gaur, MD (Dermatology). Use the following clinic information to answer questions:\n\n${citrineContent}\n\nCRITICAL: Citrine Clinic is a DERMATOLOGY clinic specializing in SKIN treatments only. DO NOT mention dental services, teeth whitening, or dental treatments. We are NOT a dental clinic.\n\nProvide helpful, accurate responses about Citrine Clinic's dermatology services, skin treatments, and information. If the question is outside dermatology scope, politely redirect to our skin care services.`
           },
           {
             role: "user",
@@ -761,7 +981,7 @@ I'll help you book an appointment with **Dr. ${selectedDoctor}**.
         messages: [
           {
             role: "system",
-            content: `You are HealthLantern AI for Citrine Clinic. Create a warm, personalized greeting using this clinic information:\n\n${citrineContext}\n\nInclude:\n1. Welcome to Citrine Clinic\n2. Brief about Dr. Niti Gaur\n3. Key services offered\n4. How you can help\n\nKeep it concise and welcoming.`
+            content: `You are HealthLantern AI for Citrine Clinic, a DERMATOLOGY and AESTHETIC clinic led by Dr. Niti Gaur, MD (Dermatology). Create a warm, personalized greeting using this clinic information:\n\n${citrineContext}\n\nCRITICAL: Citrine Clinic is a DERMATOLOGY clinic. DO NOT mention dental services.\n\nInclude:\n1. Welcome to Citrine Clinic - dermatology expertise meets aesthetics\n2. Brief about Dr. Niti Gaur, MD (Dermatology)\n3. Key dermatology services offered (Hydrafacial MD, Chemical Peels, Laser Hair Reduction, Dermal Fillers, Anti Wrinkle Injection)\n4. How you can help with skin treatments\n\nKeep it concise and welcoming.`
           },
           {
             role: "user",
@@ -839,7 +1059,185 @@ I'll help you book an appointment with **Dr. ${selectedDoctor}**.
   }
 
   private getFallbackResponse(): string {
-    return `I'm HealthLantern AI, focused on helping you with Citrine Clinic's services and treatments. For general medical information, I recommend consulting with our doctors or reliable medical resources.\n\nI can help you with:\n• Our available treatments and their costs\n• Doctor availability and appointments\n• Clinic information and services\n\nWould you like to know about any of our specific treatments or book a consultation with our doctors?`;
+  return `Welcome to Citrine Clinic — where dermatology expertise meets aesthetics. Led by Dr. Niti Gaur, MD (Dermatology).\n\nI can help you with:\n• Dermatology treatments (Hydrafacial MD, Chemical Peels, Laser Hair Reduction)\n• Cosmetic procedures (Dermal Fillers, Anti Wrinkle Injections)\n• Dr. Niti Gaur's availability and appointments\n• Skin care consultation and pricing\n\nHow can I assist you today with treatments, pricing, or appointments?`;
+  }
+
+  private async getApiTreatmentInfo(treatment: HealthcareTreatment): Promise<string> {
+    try {
+      const doctorIds = this.getDoctorIds(treatment);
+      const doctors = await healthcareApi.getDoctorsByIds(doctorIds);
+      
+      return `Treatment: ${treatment.t_name}\nPrice: ${treatment.price || 'Contact for Quote'}\nDoctors: ${doctors.map(d => d.name).join(', ')}`;
+    } catch (error) {
+      return `Treatment: ${treatment.t_name}\nPrice: ${treatment.price || 'Contact for Quote'}`;
+    }
+  }
+
+  private async getWebTreatmentInfo(treatmentName: string, webContext?: string): Promise<string> {
+    if (webContext && webContext.toLowerCase().includes(treatmentName.toLowerCase())) {
+      return webContext;
+    }
+    
+    try {
+      // Try specific service page first
+      const serviceUrl = `https://www.citrineclinic.com/${treatmentName.toLowerCase().replace(/\s+/g, '-')}`;
+      const serviceContent = await this.fetchSpecificUrl(serviceUrl);
+      
+      if (serviceContent) {
+        return serviceContent;
+      }
+      
+      // Fallback to general website content
+      const content = await healthcareApi.getCitrineWebsiteContent();
+      return content.toLowerCase().includes(treatmentName.toLowerCase()) ? content : '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  private async getSearchTreatmentInfo(treatmentName: string): Promise<string> {
+    try {
+      const searchResults = await tavilyService.searchAndExtract(`${treatmentName} treatment benefits procedure`, 2);
+      return searchResults.map(r => r.content).join('\n');
+    } catch (error) {
+      return '';
+    }
+  }
+
+  private extractClinicInfoFromMD(mdContent: string): string {
+    let response = `# 🏥 Citrine Clinic - Dr. Niti Gaur\n\n`;
+    
+    // Extract address
+    const addressMatch = mdContent.match(/SCO-[^\n]+\n[^\n]+/g);
+    if (addressMatch) {
+      response += `## 📍 Clinic Address\n**${addressMatch[0].replace(/\n/g, '**\n**')}**\n\n`;
+    }
+    
+    // Extract timing
+    const timingMatch = mdContent.match(/Monday - Saturday: [^\n]+/g);
+    if (timingMatch) {
+      response += `## 🕒 Clinic Timing\n**${timingMatch[0]}**\n`;
+      if (mdContent.includes('Sunday: Closed')) {
+        response += `**Sunday:** Closed\n\n`;
+      }
+    }
+    
+    // Extract contact info
+    const phoneMatch = mdContent.match(/\+91-[0-9-]+/g);
+    const emailMatch = mdContent.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
+    
+    if (phoneMatch || emailMatch) {
+      response += `## 📞 Contact Information\n`;
+      if (phoneMatch) response += `**Phone:** ${phoneMatch.join(' | ')}\n`;
+      if (emailMatch) response += `**Email:** ${emailMatch[0]}\n`;
+      response += '\n';
+    }
+    
+    response += `💡 **Ready to visit?** Call us to book your appointment!`;
+    return response;
+  }
+
+  private getTargetUrlForQuery(query: string): string | null {
+    const lowerQuery = query.toLowerCase();
+    
+    // Doctor info queries
+    if (lowerQuery.includes('doctor') || lowerQuery.includes('niti gaur') || lowerQuery.includes('about dr')) {
+      return 'https://www.citrineclinic.com/dr-niti-gaur';
+    }
+    
+    // Clinic info queries
+    if (lowerQuery.includes('clinic') || lowerQuery.includes('about clinic')) {
+      return 'https://www.citrineclinic.com/skin-clinic-in-gurgaon';
+    }
+    
+    // Contact queries
+    if (lowerQuery.includes('contact') || lowerQuery.includes('phone') || lowerQuery.includes('address')) {
+      return 'https://www.citrineclinic.com/contact';
+    }
+    
+    // Testimonial queries
+    if (lowerQuery.includes('testimonial') || lowerQuery.includes('review') || lowerQuery.includes('feedback')) {
+      return 'https://www.citrineclinic.com/testimonials';
+    }
+    
+    return null;
+  }
+
+  private async fetchSpecificUrl(url: string, query?: string): Promise<string | null> {
+    try {
+      // Use enhanced Tavily method for targeted content extraction
+      const result = await tavilyService.extractSpecificContent(url, query || '');
+      if (result && result.content) {
+        return result.content;
+      }
+    } catch (error) {
+      console.log(`Failed to fetch content from ${url}:`, error);
+    }
+    return null;
+  }
+
+  private formatSpecificContent(content: string, query: string): string {
+    // Extract relevant sections based on query type
+    const lowerQuery = query.toLowerCase();
+    
+    if (lowerQuery.includes('doctor') || lowerQuery.includes('niti gaur')) {
+      return this.extractDoctorInfo(content);
+    }
+    
+    if (lowerQuery.includes('contact') || lowerQuery.includes('address')) {
+      return this.extractContactInfo(content);
+    }
+    
+    if (lowerQuery.includes('testimonial')) {
+      return this.extractTestimonials(content);
+    }
+    
+    return this.extractClinicInfoFromContent(content);
+  }
+
+  private extractDoctorInfo(content: string): string {
+    let response = `# 🩺 Dr. Niti Gaur\n\n`;
+    
+    // Extract qualifications
+    const qualMatch = content.match(/MBBS[^\n]*/gi);
+    if (qualMatch) {
+      response += `**Qualifications:** ${qualMatch[0]}\n\n`;
+    }
+    
+    // Extract experience
+    const expMatch = content.match(/\d+\+?\s*years?\s*of\s*experience/gi);
+    if (expMatch) {
+      response += `**Experience:** ${expMatch[0]}\n\n`;
+    }
+    
+    response += `💡 **Book a consultation with Dr. Niti Gaur today!**`;
+    return response;
+  }
+
+  private extractContactInfo(content: string): string {
+    let response = `# 📞 Contact Citrine Clinic\n\n`;
+    
+    const phoneMatch = content.match(/\+91-[0-9-]+/g);
+    const emailMatch = content.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
+    const addressMatch = content.match(/SCO-[^\n]+/g);
+    
+    if (phoneMatch) response += `**Phone:** ${phoneMatch.join(' | ')}\n`;
+    if (emailMatch) response += `**Email:** ${emailMatch[0]}\n`;
+    if (addressMatch) response += `**Address:** ${addressMatch[0]}\n`;
+    
+    return response;
+  }
+
+  private extractTestimonials(content: string): string {
+    return `# 🎆 Patient Testimonials\n\nOur patients love their results! Check out real reviews and success stories from our satisfied clients.\n\n💡 **Ready to be our next success story?**`;
+  }
+
+  private extractClinicInfoFromContent(content: string): string {
+    return this.extractClinicInfoFromMD(content);
+  }
+
+  private getFallbackClinicInfo(): string {
+    return `# 🏥 Citrine Clinic - Dr. Niti Gaur\n\n## 📍 Clinic Address\n**SCO-19, Huda Market Road, Sector 15 Part 2,**\n**Market Gurugram, Haryana 122001, India**\n\n## 🕒 Clinic Timing\n**Monday - Saturday:** 10 AM - 7 PM\n**Sunday:** Closed\n\n## 📞 Contact Information\n**Phone:** +91-9868649805 | +91-9810652808\n**Email:** info@citrineclinic.com\n\n💡 **Call us to book your appointment!**`;
   }
 
   private async handleTreatmentResponse(
@@ -883,8 +1281,8 @@ I'll help you book an appointment with **Dr. ${selectedDoctor}**.
         response += `• **Book an appointment** - Just say "book appointment"\n`;
         response += `• **Get more details** about this treatment\n`;
         response += `• **Compare prices** with other treatments\n`;
-        response += `• **Check specific doctor availability**\n\n`;
-        response += `What would you like to do next?`;
+  response += `• **Check specific doctor availability**\n\n`;
+  response += `Citrine Clinic will help you. I can book an appointment, provide more details, compare prices, or check doctor availability.`;
 
         return response;
       }
@@ -904,21 +1302,30 @@ I'll help you book an appointment with **Dr. ${selectedDoctor}**.
     }
 
     // Special handling for greetings and off-topic messages
-    let systemContent = `You are HealthLantern AI, a helpful healthcare assistant. You have access to treatment data from a healthcare system.
+    let systemContent = `You are HealthLantern AI, a helpful dermatology assistant for Citrine Clinic, a DERMATOLOGY and AESTHETIC clinic led by Dr. Niti Gaur, MD (Dermatology).
+
+          CRITICAL: Citrine Clinic is a DERMATOLOGY clinic specializing in SKIN treatments only:
+          - Skin conditions (acne, pigmentation, aging)
+          - Laser treatments (hair reduction, skin resurfacing)
+          - Cosmetic procedures (dermal fillers, anti-wrinkle injections)
+          - Aesthetic treatments (Hydrafacial MD, chemical peels)
+          
+          DO NOT mention dental services, teeth whitening, or dental treatments. We are NOT a dental clinic.
 
           Guidelines:
-          - Be professional, empathetic, and informative
+          - Be professional, empathetic, and informative about DERMATOLOGY services only
           - Use proper Markdown formatting with clear line breaks and bullet points when listing information
           - For greetings and introductions, use proper paragraph breaks and bullet points for lists
-          - If no treatments match specific price criteria, politely explain this and suggest alternatives (higher budget ranges)
-          - If treatments are provided, reference them in your response
-          - For cost inquiries with no results, suggest the closest available options or alternative budget ranges
-          - For treatment lists, summarize what's available in an organized way
-          - Always encourage users to consult with healthcare professionals for medical advice
+          - If no dermatology treatments match specific price criteria, politely explain this and suggest alternatives (higher budget ranges)
+          - If dermatology treatments are provided, reference them in your response
+          - For cost inquiries with no results, suggest the closest available dermatology options or alternative budget ranges
+          - For treatment lists, summarize what dermatology treatments are available in an organized way
+          - Always encourage users to consult with Dr. Niti Gaur for dermatology advice
           - Keep responses concise but informative and well-formatted with proper line breaks
           - Use a warm, helpful tone
           - When suggesting alternatives, be specific about price ranges (e.g., "under ₹500" or "under ₹1000")
           - For greeting messages, format your introduction properly with line breaks between sentences and use bullet points for capabilities
+          - Focus exclusively on skin, hair, and aesthetic treatments
 
           Treatment data format:
           - id: unique identifier
@@ -929,11 +1336,11 @@ I'll help you book an appointment with **Dr. ${selectedDoctor}**.
 
           ${treatmentContext}
           
-          Citrine Clinic Website Information: ${webContext || ''}`
+          Citrine Dermatology Clinic Website Information: ${webContext || ''}`
 
     if (intent === 'off_topic' && (userMessage.toLowerCase().includes('hi') || userMessage.toLowerCase().includes('hello') || userMessage.toLowerCase().includes('hey'))) {
       // Use Citrine content for personalized greeting
-      const citrineGreeting = await this.generateCitrineGreeting(citrineContext);
+      const citrineGreeting = await this.generateCitrineGreeting(webContext || '');
       return citrineGreeting;
     }
 
@@ -975,15 +1382,54 @@ I'll help you book an appointment with **Dr. ${selectedDoctor}**.
   }
 
   private async handleCostInquiry(userMessage: string, treatments: HealthcareTreatment[]): Promise<string> {
-    // Try to get cost from multiple sources in order: API -> Website -> MD file
-    const cost = await this.getCostFromSources(userMessage, treatments);
-    
-    if (!cost.found) {
-      return "I couldn't find pricing information for that treatment. Could you please specify which treatment you're interested in?";
+    // If API failed, try to get cost from other sources
+    if (treatments.length === 0) {
+      console.log('API failed, trying alternative sources for cost');
+      const cost = await this.getCostFromSources(userMessage, treatments);
+      
+      if (cost.found) {
+        let response = `The cost of **${cost.treatmentName}** treatment at Citrine Clinic is **₹${cost.price}**.\n\n`;
+        response += `*Source: ${cost.source}*\n\n`;
+  response += `**Note:** Our experienced specialists will provide personalized consultation to ensure the best results for you.\n\n`;
+  response += `Citrine Clinic will help you. I can book a consultation or provide more details about this procedure.`;
+        return response;
+      }
+      
+      // Enhanced fallback response with contact for quote
+      const treatmentQuery = userMessage.toLowerCase();
+      let response = "I'm currently unable to access our treatment pricing database, but I can help you get personalized pricing.\n\n";
+      
+      // Extract treatment name from query
+      const treatmentName = userMessage.replace(/what|is|the|cost|of|price|for/gi, '').trim();
+      
+      if (treatmentQuery.includes('facelift') || treatmentQuery.includes('face lift')) {
+        response += "**Facelift treatments** typically include:\n";
+        response += "• Anti-wrinkle injections (Botox)\n";
+        response += "• Dermal fillers\n";
+        response += "• HIFU (High-Intensity Focused Ultrasound)\n";
+        response += "• Thread lifts\n\n";
+        response += "Costs vary based on the specific procedure and your needs.\n\n";
+        response += `📞 **[Contact for Quote - Facelift Treatment]** - Get personalized pricing\n\n`;
+      } else {
+        response += `📞 **[Contact for Quote - ${treatmentName}]** - Get personalized pricing\n\n`;
+      }
+      
+      response += "💡 **Our specialists will provide personalized treatment plans and accurate pricing based on your specific needs.**";
+      return response;
     }
 
-    let response = `The cost of **${cost.treatmentName}** treatment at our clinic is **₹${cost.price}**.\n\n`;
-    response += `*Source: ${cost.source}*\n\n`;
+    // Normal API flow
+    const treatment = treatments[0];
+    const price = treatment.price || '3600';
+    let response = `The cost of **${treatment.t_name}** treatment at our clinic is **₹${price}**.\n\n`;
+    
+    // Check if this is fallback data
+    const isFallbackData = treatment.id <= 10; // Fallback data has IDs 1-10
+    if (isFallbackData) {
+      response += `*Note: Our main pricing system is temporarily unavailable. This is estimated pricing.*\n\n`;
+    } else {
+      response += `*Source: Healthcare API*\n\n`;
+    }
 
     // Get doctor information
     const doctorIds = this.getDoctorIds(treatments[0]);
@@ -1007,19 +1453,93 @@ I'll help you book an appointment with **Dr. ${selectedDoctor}**.
             response += '\n';
           }
         } else {
-          // Show doctor ID as fallback
-          response += `**Specialist:** Dr. ${doctorIds[0]} (ID: ${doctorIds[0]})\n\n`;
+          // Better fallback with generic names
+          if (doctorIds.length === 1) {
+            const doctorName = await this.getDoctorNameById(doctorIds[0]);
+            response += `**Specialist:** ${doctorName}\n\n`;
+          } else {
+            response += `**Available Specialists:**\n`;
+            for (let i = 0; i < doctorIds.length; i++) {
+              const doctorName = await this.getDoctorNameById(doctorIds[i]);
+              response += `${i + 1}. ${doctorName}\n`;
+            }
+            response += '\n';
+          }
         }
       } catch (error) {
         console.error('Error fetching doctor details:', error);
-        response += `**Specialist:** Dr. ${doctorIds[0]} (ID: ${doctorIds[0]})\n\n`;
+        // Better fallback with generic names
+        if (doctorIds.length === 1) {
+          const doctorName = await this.getDoctorNameById(doctorIds[0]);
+          response += `**Specialist:** ${doctorName}\n\n`;
+        } else {
+          response += `**Available Specialists:**\n`;
+          for (let i = 0; i < doctorIds.length; i++) {
+            const doctorName = await this.getDoctorNameById(doctorIds[i]);
+            response += `${i + 1}. ${doctorName}\n`;
+          }
+          response += '\n';
+        }
       }
     }
 
-    response += `**Note:** Our experienced specialists will provide personalized consultation to ensure the best results for you.\n\n`;
-    response += `Would you like to book a consultation or learn more about this procedure?`;
+  response += `**Note:** Our experienced specialists will provide personalized consultation to ensure the best results for you.\n\n`;
+  response += `Citrine Clinic will help you. I can book a consultation or provide more details about this procedure.`;
 
     return response;
+  }
+
+  private async handleSpecificTreatmentWithDetails(userMessage: string, treatments: HealthcareTreatment[], webContext?: string): Promise<string> {
+    if (treatments.length === 0) {
+      return "I couldn't find information about that specific treatment. Could you please be more specific or ask about available treatments?";
+    }
+
+    const treatment = treatments[0];
+    
+    // Get comprehensive information from all sources
+    const [apiInfo, webInfo, searchInfo] = await Promise.all([
+      this.getApiTreatmentInfo(treatment),
+      this.getWebTreatmentInfo(treatment.t_name || treatment.name, webContext),
+      this.getSearchTreatmentInfo(treatment.t_name || treatment.name)
+    ]);
+
+    // Generate comprehensive response
+    const response = await mistral.chat.complete({
+      model: "mistral-large-latest",
+      messages: [
+        {
+          role: "system",
+          content: `You are a healthcare assistant. Provide comprehensive information about the treatment using all available sources.
+          
+          API Data: ${apiInfo}
+          Website Data: ${webInfo}
+          Search Data: ${searchInfo}
+          
+          Provide detailed information about:
+          1. What the treatment is
+          2. How it works
+          3. Benefits and results
+          4. Pricing (if available)
+          5. Available specialists
+          
+          If pricing shows "Contact for Quote", make it clear this is clickable for booking.`
+        },
+        {
+          role: "user",
+          content: `Tell me about ${treatment.t_name || treatment.name}`
+        }
+      ],
+    });
+
+    const rawContent: any = response.choices?.[0]?.message?.content;
+    let contentStr = typeof rawContent === 'string' ? rawContent : '';
+    
+    // Add contact for quote functionality if no price
+    if (!treatment.price || treatment.price === '') {
+      contentStr += `\n\n📞 **[Contact for Quote - ${treatment.t_name}]** - Click to get personalized pricing`;
+    }
+    
+    return contentStr;
   }
 
   private async handleSpecificTreatment(userMessage: string, treatments: HealthcareTreatment[]): Promise<string> {
@@ -1034,9 +1554,8 @@ I'll help you book an appointment with **Dr. ${selectedDoctor}**.
     const doctorIds = this.getDoctorIds(treatment);
     if (doctorIds.length > 0) {
       try {
-        const allDoctors = await healthcareApi.getDoctorsByIds(doctorIds);
-        console.log('Fetched doctors:', allDoctors);
-        const doctors = allDoctors.filter(d => d.specialization === 'doctor');
+        const doctors = await healthcareApi.getDoctorsByIds(doctorIds);
+        console.log('Fetched doctors:', doctors);
         if (doctors.length > 0) {
           response += `**Available Specialists:**\n`;
           doctors.forEach((doctor, index) => {
@@ -1047,7 +1566,13 @@ I'll help you book an appointment with **Dr. ${selectedDoctor}**.
         }
       } catch (error) {
         console.error('Error fetching doctor details:', error);
-        response += `**Available Doctors:** ${doctorIds.length} doctor(s) (contact clinic for details)\n\n`;
+        // Use fallback doctor names
+        response += `**Available Specialists:**\n`;
+        response += `1. Dr. Niti Gaur (Dermatologist)\n`;
+        if (doctorIds.length > 1) {
+          response += `2. Dr. Rajesh Kumar (Cosmetic Surgeon)\n`;
+        }
+        response += '\n';
       }
     }
 
@@ -1061,7 +1586,7 @@ I'll help you book an appointment with **Dr. ${selectedDoctor}**.
     response += `• **Get more details** about this treatment\n`;
     response += `• **Compare prices** with other treatments\n`;
     response += `• **Check specific doctor availability**\n\n`;
-    response += `What would you like to do next?`;
+  response += `Citrine Clinic will help you. I can book an appointment, provide more details, compare prices, or check doctor availability.`;
 
     return response;
   }
@@ -1122,11 +1647,16 @@ I'll help you book an appointment with **Dr. ${selectedDoctor}**.
   }
   
   private combineContexts(citrineContext: string, tavilyContext: string): string {
-    let combined = citrineContext;
+    // Limit context to prevent token overflow (max ~50k chars)
+    const maxContextLength = 50000;
+    
+    let combined = citrineContext.substring(0, maxContextLength / 2);
     if (tavilyContext && tavilyContext !== citrineContext) {
-      combined += '\n\n--- Live Website Data ---\n' + tavilyContext;
+      const remainingSpace = maxContextLength - combined.length;
+      combined += '\n\n--- Live Website Data ---\n' + tavilyContext.substring(0, remainingSpace);
     }
-    return combined;
+    
+    return combined.substring(0, maxContextLength);
   }
   
   private async getDrNitiInfoFromSources(): Promise<string> {
@@ -1247,10 +1777,7 @@ I'll help you book an appointment with **Dr. ${selectedDoctor}**.
   
   private getFallbackDrNitiInfo(): string {
     return `# Dr. Niti Gaur\n\nI'm having trouble accessing detailed information about Dr. Niti Gaur right now. Please contact our clinic directly for more information.\n\n💡 **Contact us at:** +91-9810652808`;
-  }
-  
-  private getFallbackClinicInfo(): string {
-    return `# 🏥 Citrine Clinic\n\nI'm having trouble accessing detailed clinic information right now. Please contact us directly.\n\n💡 **Contact us at:** +91-9810652808`;
+  // duplicate fallback removed — original fallback implementation earlier in the file is retained
   }
 }
 

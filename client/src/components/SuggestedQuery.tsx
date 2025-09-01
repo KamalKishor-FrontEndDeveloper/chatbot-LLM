@@ -1,44 +1,41 @@
-import { SuggestedQuery as SuggestedQueryType } from '@/types/chat';
-import { cn } from '@/lib/utils';
+"use client"
+
+import type { SuggestedQuery as SuggestedQueryType } from "@/types/chat"
+import { cn } from "@/lib/utils"
 
 interface SuggestedQueryProps {
-  query: SuggestedQueryType;
-  onClick: () => void;
+  query: SuggestedQueryType
+  onClick: () => void
 }
 
 export default function SuggestedQuery({ query, onClick }: SuggestedQueryProps) {
   const getColorClasses = (color: string) => {
     switch (color) {
-      case 'primary':
-        return 'hover:border-primary/50 group-hover:bg-primary/20 text-primary';
-      case 'secondary':
-        return 'hover:border-secondary/50 group-hover:bg-secondary/20 text-secondary';
-      case 'accent':
-        return 'hover:border-accent/50 group-hover:bg-accent/20 text-accent';
+      case "primary":
+        return { text: "text-primary", ring: "ring-primary/30", bgSoft: "bg-primary/10" }
+      case "secondary":
+        return { text: "text-secondary", ring: "ring-secondary/30", bgSoft: "bg-secondary/10" }
+      case "accent":
+        return { text: "text-accent", ring: "ring-accent/30", bgSoft: "bg-accent/10" }
       default:
-        return 'hover:border-primary/50 group-hover:bg-primary/20 text-primary';
+        return { text: "text-primary", ring: "ring-primary/30", bgSoft: "bg-primary/10" }
     }
-  };
-
-  const colorClasses = getColorClasses(query.color);
-  const colorClassArray = colorClasses.split(' ');
+  }
+  const color = getColorClasses(query.color)
 
   return (
-    <button 
+    <button
       className={cn(
-        "bg-card border border-border rounded-lg p-4 text-left transition-all duration-200 hover:shadow-md group",
-        colorClassArray[0]
+        "bg-card border border-border rounded-xl p-4 text-left transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2",
+        color.ring,
       )}
       onClick={onClick}
+      aria-label={`Ask about ${query.title}`}
       data-testid="suggested-query-button"
     >
       <div className="flex items-start space-x-3">
-        <div className={cn(
-          "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
-          `bg-${query.color}/10`,
-          colorClassArray[1]
-        )}>
-          <i className={cn(query.icon, "text-sm", colorClassArray[2])}></i>
+        <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", color.bgSoft)}>
+          <i className={cn(query.icon, "text-sm", color.text)}></i>
         </div>
         <div className="flex-1">
           <p className="font-medium text-foreground text-sm">{query.title}</p>
@@ -46,5 +43,5 @@ export default function SuggestedQuery({ query, onClick }: SuggestedQueryProps) 
         </div>
       </div>
     </button>
-  );
+  )
 }
