@@ -153,26 +153,26 @@ export default function ChatInput({ onSendMessage, disabled }: ChatInputProps) {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => onSendMessage('Book a consultation')}
+          onClick={() => onSendMessage('Book an appointment')}
           className="rounded-xl text-xs px-3 py-1.5 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border-slate-200/50 dark:border-slate-700/50 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-600 transition-all duration-200 shadow-sm hover:shadow-md"
         >
-          📅 Book Consultation
+          📅 Book an appointment
         </Button>
         <Button
           variant="outline"
           size="sm"
-          onClick={() => onSendMessage('Show available specialists')}
-          className="rounded-xl text-xs px-3 py-1.5 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border-slate-200/50 dark:border-slate-700/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-300 dark:hover:border-purple-600 transition-all duration-200 shadow-sm hover:shadow-md"
-        >
-          👨⚕️ View Specialists
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onSendMessage('What are the costs?')}
+          onClick={() => onSendMessage('What is the cost of LHR?')}
           className="rounded-xl text-xs px-3 py-1.5 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border-slate-200/50 dark:border-slate-700/50 hover:bg-green-50 dark:hover:bg-green-900/20 hover:border-green-300 dark:hover:border-green-600 transition-all duration-200 shadow-sm hover:shadow-md"
         >
-          💰 View Pricing
+          � What is the cost of LHR
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onSendMessage('Know about Dr Niti Gaur')}
+          className="rounded-xl text-xs px-3 py-1.5 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border-slate-200/50 dark:border-slate-700/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-300 dark:hover:border-purple-600 transition-all duration-200 shadow-sm hover:shadow-md"
+        >
+          �‍⚕️ Know about Dr Niti Gaur
         </Button>
       </div>
     </div>

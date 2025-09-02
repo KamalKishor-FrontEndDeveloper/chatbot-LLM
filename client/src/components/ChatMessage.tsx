@@ -12,6 +12,8 @@ import ContactQuoteForm from "./ContactQuoteForm"
 interface ChatMessageProps {
   message: ChatMessage
   onFormStateChange?: (isOpen: boolean) => void
+  onBookingCTAStateChange?: (isOpen: boolean) => void
+  isStreaming?: boolean
 }
 
 interface AppointmentData {
@@ -23,7 +25,7 @@ interface AppointmentData {
   message: string
 }
 
-export default function ChatMessageComponent({ message }: ChatMessageProps) {
+export default function ChatMessageComponent({ message, isStreaming, onBookingCTAStateChange }: ChatMessageProps) {
   const formatTime = (timestamp: string) => {
     return new Date(timestamp).toLocaleTimeString("en-US", {
       hour: "numeric",
@@ -119,7 +121,7 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             <div className="w-8 h-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center mr-2 ring-1 ring-primary/20">
               <i className="fas fa-robot text-sm"></i>
             </div>
-            <span className="text-sm font-medium text-foreground">HealthLantern AI</span>
+            <span className="text-sm font-medium text-foreground">Thinkchat AI</span>
           </div>
 
           <div className="px-4 py-3 rounded-2xl rounded-tl-md bg-card border border-border shadow-sm">
@@ -142,7 +144,7 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             <div className="w-8 h-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center mr-2 ring-1 ring-primary/20">
               <i className="fas fa-robot text-sm"></i>
             </div>
-            <span className="text-sm font-medium text-foreground">HealthLantern AI</span>
+            <span className="text-sm font-medium text-foreground">Thinkchat AI</span>
           </div>
 
           <div className="px-4 py-3 rounded-2xl rounded-tl-md bg-card border border-border shadow-sm">
@@ -170,7 +172,7 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             <div className="w-8 h-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center mr-2 ring-1 ring-primary/20">
               <i className="fas fa-robot text-sm"></i>
             </div>
-            <span className="text-sm font-medium text-foreground">HealthLantern AI</span>
+            <span className="text-sm font-medium text-foreground">Thinkchat AI</span>
           </div>
 
           <div className="px-4 py-3 rounded-2xl rounded-tl-md bg-card border border-border shadow-sm">
@@ -199,12 +201,25 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
                   setInitialAppointmentData(prefill)
                   setShowForm(true)
                   setShowBookingCTA(false)
+                  if (typeof onBookingCTAStateChange === 'function') onBookingCTAStateChange(true)
                 }}
                 className="flex-1 rounded-full"
               >
                 Book Appointment
               </Button>
-              <Button variant="outline" onClick={() => setShowBookingCTA(false)} className="flex-1 rounded-full">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowBookingCTA(false)
+                  // Show a friendly, context-aware message when user declines booking
+                  setSubmitResult(
+                    "👍 No problem! If you have any other questions about treatments, pricing, or need help with something else, just let me know. I'm here to assist you!"
+                  )
+                  setFormSubmitted(true)
+                  if (typeof onBookingCTAStateChange === 'function') onBookingCTAStateChange(false)
+                }}
+                className="flex-1 rounded-full"
+              >
                 No thanks
               </Button>
             </div>
@@ -269,33 +284,43 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             {/* Treatment Cards */}
             {message.treatments && message.treatments.length > 0 && (
               <div className="space-y-3 mt-4" data-testid="treatment-cards">
-                {message.treatments.slice(0, 5).map((treatment) => (
-                  <TreatmentCard key={treatment.id} treatment={treatment} />
-                ))}
-
-                {message.treatments.length > 5 && (
-                  <div className="text-sm text-muted-foreground text-center py-2">
-                    Showing 5 of {message.treatments.length} treatments. Ask for more specific information to narrow
-                    down results.
+                {/* If this message is streaming, reserve the same vertical space with a skeleton to avoid layout shift. */}
+                {/**
+                 * When `isStreaming` is true we show a fixed-height skeleton placeholder roughly matching the
+                 * TreatmentCard height. Once streaming completes the real cards (from messages array) will be
+                 * rendered by the parent and the skeleton won't be visible.
+                 */}
+                {/* @ts-ignore - isStreaming is optional and defaults to false when absent */}
+                { isStreaming ? (
+                  <div className="space-y-3 mt-2">
+                    <div className="w-full rounded-2xl border border-border bg-card p-3 md:p-4 shadow-sm animate-pulse">
+                      <div className="h-6 bg-muted rounded w-1/3 mb-3" />
+                      <div className="h-3 bg-muted rounded w-2/3 mb-2" />
+                      <div className="h-3 bg-muted rounded w-1/2" />
+                      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="h-14 bg-muted rounded" />
+                        <div className="h-14 bg-muted rounded" />
+                      </div>
+                    </div>
                   </div>
+                ) : (
+                  <> 
+                    {message.treatments.slice(0, 5).map((treatment) => (
+                      <TreatmentCard key={treatment.id} treatment={treatment} />
+                    ))}
+
+                    {message.treatments.length > 5 && (
+                      <div className="text-sm text-muted-foreground text-center py-2">
+                        Showing 5 of {message.treatments.length} treatments. Ask for more specific information to narrow
+                        down results.
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
 
-            {/* Additional Info */}
-            {message.treatments && message.treatments.length > 0 && (
-              <div className="mt-4 p-3 bg-secondary/5 border border-secondary/20 rounded-lg">
-                <div className="flex items-start space-x-2">
-                  <i className="fas fa-lightbulb text-secondary text-sm mt-0.5"></i>
-                  <div className="text-sm">
-                    <p className="font-medium text-foreground m-0 p-0 ">Need more information?</p>
-                    <p className="text-muted-foreground">
-                      You can ask about specific doctors, compare treatments, or inquire about consultation booking.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
+           
           </div>
           <span className="text-[10px] text-muted-foreground mt-2 block">{formatTime(message.timestamp)}</span>
         </div>

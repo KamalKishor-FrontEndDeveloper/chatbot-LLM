@@ -1,12 +1,15 @@
 import { HealthcareTreatment, Doctor, ClinicInfo, AppointmentBooking } from '@shared/schema';
+// import { fallbackDataService } from './fallback-data';
 
 export class HealthcareApiService {
-  private readonly apiUrl = 'https://pmsapi.healthlantern.com/api/get_tree_list_for_treatment_chatboard/2e4c54a60ae5156c6082797a6816e067';
-  private readonly doctorApiUrl = 'https://pmsapi.healthlantern.com/api/get_staff_List_chatboard/2e4c54a60ae5156c6082797a6816e067';
+  private readonly apiUrl = 'https://pmsapi.healthlantern.com/api/get_tree_list_for_treatment_chatboard/1a26495729bbc804007b72e98803cab4';
+  private readonly doctorApiUrl = 'https://pmsapi.healthlantern.com/api/get_staff_List_chatboard/1a26495729bbc804007b72e98803cab4';
   private readonly appointmentApiUrl = 'https://pmsapi.healthlantern.com/api/Appointment_form_data_put';
   private readonly clinicApiUrl = 'https://pmsapi.healthlantern.com/api/organization_chatboard/c9ab83f09006371cb3f745a03b1f8c64';
-  private readonly authToken = '2e4c54a60ae5156c6082797a6816e067';
+  private readonly authToken = '1a26495729bbc804007b72e98803cab4';
   private citrineWebsiteContent: string | null = null;
+  
+
 
   async getCitrineWebsiteContent(): Promise<string> {
     if (!this.citrineWebsiteContent) {
@@ -21,6 +24,9 @@ export class HealthcareApiService {
     try {
       console.log('Attempting to fetch treatments from:', this.apiUrl);
       
+      // const controller = new AbortController();
+      // const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
       let response: Response;
       try {
         response = await fetch(this.apiUrl, {
@@ -31,11 +37,14 @@ export class HealthcareApiService {
           },
         });
       } catch (err) {
+        // handle fetch abort due to timeout
         if ((err as Error).name === 'AbortError') {
           console.error('Healthcare API request aborted due to timeout');
           throw new Error('Healthcare API is currently unavailable (timeout)');
         }
         throw err;
+      } finally {
+        // clearTimeout(timeoutId);
       }
       
       console.log('API Response status:', response.status);
@@ -73,6 +82,8 @@ export class HealthcareApiService {
         throw new Error('API response format is not as expected');
       }
 
+      // Remove non-dermatology items (e.g., dental/teeth services) that may come from the external CRM
+      // Citrine Clinic is a dermatology clinic; filter out obvious dental keywords to avoid showing those cards.
       try {
         treatments = this.filterOutNonDermatologyTreatments(treatments);
       } catch (err) {
@@ -88,11 +99,16 @@ export class HealthcareApiService {
         url: this.apiUrl
       });
       
+      // Return empty array when API is unavailable to force real-time data
       console.log('Treatment API unavailable - returning empty array');
       return [];
     }
   }
 
+  /**
+   * Recursively filter out treatments that clearly belong to dental/oral specialties so the
+   * Citrine Clinic frontend only shows dermatology/aesthetic services.
+   */
   private filterOutNonDermatologyTreatments(treatments: HealthcareTreatment[]): HealthcareTreatment[] {
     if (!Array.isArray(treatments) || treatments.length === 0) return treatments;
 
@@ -107,6 +123,7 @@ export class HealthcareApiService {
     const recurse = (items: any[]): any[] => {
       const out: any[] = [];
       for (const item of items) {
+        // If the item title/name contains a banned keyword, skip it
         if (containsBanned(item.t_name) || containsBanned(item.name) || containsBanned(item.title)) {
           continue;
         }
@@ -133,14 +150,19 @@ export class HealthcareApiService {
     return this.flattenTreatments(allTreatments);
   }
 
+
+
   async searchTreatments(query: string): Promise<HealthcareTreatment[]> {
     const flatTreatments = await this.getFlatTreatments();
     const lowerQuery = query.toLowerCase();
+    
+ 
     
     const searchTerms = lowerQuery.split(' ').filter(term => term.length > 2);
     
     return flatTreatments.filter(treatment => {
       const searchableText = `${treatment.t_name} ${treatment.name}`.toLowerCase();
+      // Require all significant search terms to be present
       return searchTerms.every(term => searchableText.includes(term));
     });
   }
@@ -193,7 +215,9 @@ export class HealthcareApiService {
   getDoctorIds(treatment: HealthcareTreatment): number[] {
     if (!treatment.doctors) return [];
     try {
+      // console.log('Parsing doctors field:', treatment.doctors);
       const doctorIds = JSON.parse(treatment.doctors);
+      // console.log('Parsed doctor IDs:', doctorIds);
       return Array.isArray(doctorIds) ? doctorIds : [];
     } catch (error) {
       console.error('Error parsing doctor IDs:', error);
@@ -201,6 +225,7 @@ export class HealthcareApiService {
     }
   }
 
+  // New Doctor API methods
   async getAllDoctors(): Promise<Doctor[]> {
     try {
       const response = await fetch(this.doctorApiUrl, {
@@ -220,11 +245,20 @@ export class HealthcareApiService {
       }
       
       const result = await response.json();
+      // console.log('Doctor API Response received:', {
+      //   hasData: !!result.data,
+      //   isDirectArray: Array.isArray(result),
+      //   resultKeys: Object.keys(result || {}),
+      //   dataLength: Array.isArray(result) ? result.length : (Array.isArray(result.data) ? result.data.length : 'not array')
+      // });
       
       let doctors: Doctor[] = [];
       
+      // Handle API response structure - check if data is in result.data or direct array
       const data = result.data || result;
+      // console.log('Doctor API Response received:', Array.isArray(data) ? data.length : 'undefined', 'doctors');
       
+      // Parse the doctor data with rich profile information
       if (data && Array.isArray(data)) {
         doctors = data.map((doctor: any) => ({
           id: doctor.id,
@@ -243,6 +277,7 @@ export class HealthcareApiService {
           services: doctor.services || '',
           is_available: doctor.status === 'active'
         }));
+        // console.log('Parsed doctors:', doctors.map(d => `${d.id}: ${d.name} (${d.specialization})`));
       } else {
         console.log('No doctor data found in API response:', result);
       }
@@ -264,10 +299,12 @@ export class HealthcareApiService {
       const allDoctors = await this.getAllDoctors();
       const foundDoctors = allDoctors.filter(doctor => doctorIds.includes(doctor.id));
       
+      // If we found all doctors, return them
       if (foundDoctors.length === doctorIds.length) {
         return foundDoctors;
       }
       
+      // If some doctors are missing, supplement with fallback data
       const missingIds = doctorIds.filter(id => !foundDoctors.some(d => d.id === id));
       const missingDoctors = allDoctors.filter(doctor => missingIds.includes(doctor.id));
       
@@ -283,6 +320,7 @@ export class HealthcareApiService {
     return allDoctors.find(doctor => doctor.id === doctorId) || null;
   }
 
+  // Clinic Info API
   async getClinicInfo(): Promise<ClinicInfo | null> {
     try {
       const response = await fetch(this.clinicApiUrl, {
@@ -329,6 +367,7 @@ export class HealthcareApiService {
     }
   }
 
+  // Appointment Booking API
   async bookAppointment(appointment: AppointmentBooking): Promise<{ success: boolean; message: string }> {
     try {
       const response = await fetch(this.appointmentApiUrl, {
@@ -396,91 +435,98 @@ export class HealthcareApiService {
     }
   }
 
-  async getSpecificTreatment(query: string): Promise<HealthcareTreatment | null> {
+// In getSpecificTreatment method, remove any fallback pricing
+async getSpecificTreatment(query: string): Promise<HealthcareTreatment | null> {
     try {
-      const flatTreatments = await this.getFlatTreatments();
-      const treatment = this.findSpecificTreatment(query, flatTreatments);
-      
-      // Only return treatment if it has a real price from API
-      if (treatment && (!treatment.price || treatment.price === '')) {
-        console.log(`⚠️ Treatment found but no price available from API: "${treatment.t_name}"`);
-        return null;
-      }
-      
-      return treatment;
+        const flatTreatments = await this.getFlatTreatments();
+        const treatment = this.findSpecificTreatment(query, flatTreatments);
+        
+        // Only return treatment if it has a real price from API
+        if (treatment && (!treatment.price || treatment.price === '')) {
+            console.log(`⚠️ Treatment found but no price available from API: "${treatment.t_name}"`);
+            return null; // Don't return treatments without prices
+        }
+        
+        return treatment;
     } catch (error) {
-      console.log('API failed for specific treatment:', query);
-      return null;
+        console.log('API failed for specific treatment:', query);
+        return null; // Return null instead of fallback
     }
-  }
+}
 
-  private findSpecificTreatment(query: string, flatTreatments: HealthcareTreatment[]): HealthcareTreatment | null {
+private findSpecificTreatment(query: string, flatTreatments: HealthcareTreatment[]): HealthcareTreatment | null {
     const searchTerms = query.toLowerCase();
-    console.log(`🔍 Searching for treatment: "${query}" (normalized: "${searchTerms}")`);
+    console.log(`🔍 Searching for treatment: "${query}"`);
     
-    // Enhanced treatment mapping for better matching
-    const treatmentMapping: Record<string, string[]> = {
-      'facelift': ['face lift', 'facial lift', 'face-lift'],
-      'face lift': ['facelift', 'facial lift'],
-      'laser hair removal': ['laser hair reduction', 'hair laser', 'lhr', 'laser hair'],
-      'lhr': ['laser hair removal', 'laser hair reduction', 'hair laser'],
-      'botox': ['anti wrinkle injection', 'botulinum toxin', 'anti-wrinkle'],
-      'anti wrinkle injection': ['botox', 'botulinum'],
-      'dermal fillers': ['fillers', 'dermal filler', 'filler injection'],
-      'acne': ['acne treatment', 'pimple treatment'],
-      'pigmentation': ['pigmentation treatment', 'skin pigmentation'],
-      'hairfall': ['hair loss', 'hair fall treatment']
-    };
-
-    // Clean the query
-    let cleanQuery = searchTerms.replace(/\b(what|is|the|cost|of|price|for|in|treatment|therapy)\b/g, ' ');
-    cleanQuery = cleanQuery.replace(/[^a-z0-9\s]/g, ' ');
-    cleanQuery = cleanQuery.replace(/\s+/g, ' ').trim();
+    // Enhanced laser hair removal mapping
+    const isLaserHairQuery = searchTerms.includes('laser hair') || 
+                             searchTerms.includes('lhr') || 
+                             searchTerms.includes('hair laser');
     
-    console.log(`🧹 Cleaned query: "${cleanQuery}"`);
-
-    // Check if query matches any known treatment patterns
-    for (const [key, aliases] of Object.entries(treatmentMapping)) {
-      if (cleanQuery.includes(key) || aliases.some(alias => cleanQuery.includes(alias))) {
-        const targetTreatment = flatTreatments.find(treatment => {
-          const treatmentName = (treatment.t_name || '').toLowerCase();
-          return treatmentName.includes(key) || aliases.some(alias => treatmentName.includes(alias));
+    if (isLaserHairQuery) {
+        console.log(`🎯 Laser hair query detected - searching specifically`);
+        
+        // Look for laser hair treatments with priority
+        const laserHairTreatments = flatTreatments.filter(treatment => {
+            const treatmentName = (treatment.t_name || '').toLowerCase();
+            return treatmentName.includes('laser') && treatmentName.includes('hair') ||
+                   treatmentName.includes('lhr') ||
+                   treatmentName === 'hair laser';
         });
         
-        if (targetTreatment) {
-          console.log(`✅ Mapped "${cleanQuery}" to treatment: "${targetTreatment.t_name}"`);
-          return targetTreatment;
+        if (laserHairTreatments.length > 0) {
+            // Prioritize treatments with "reduction" or "removal" in name
+            const preferred = laserHairTreatments.find(t => 
+                t.t_name?.toLowerCase().includes('reduction') || 
+                t.t_name?.toLowerCase().includes('removal')
+            ) || laserHairTreatments[0];
+            
+            console.log(`✅ Found laser hair treatment: "${preferred.t_name}"`);
+            return preferred;
         }
-      }
     }
-
-    // Try exact match
+    
+    // Rest of your existing matching logic...
+    const cleanQuery = searchTerms.replace(/\b(what|is|the|cost|of|price|for|in|treatment|therapy)\b/g, ' ')
+                                  .replace(/[^a-z0-9\s]/g, ' ')
+                                  .replace(/\s+/g, ' ')
+                                  .trim();
+    
+    // Enhanced treatment mapping
+    const treatmentMapping: Record<string, string[]> = {
+        'laser hair removal': ['laser hair reduction', 'hair laser', 'lhr', 'laser hair'],
+        'lhr': ['laser hair removal', 'laser hair reduction', 'hair laser'],
+        'hair laser': ['laser hair removal', 'laser hair reduction', 'lhr'],
+        'botox': ['anti wrinkle injection', 'botulinum toxin'],
+        'acne treatment': ['acne', 'pimple treatment'],
+        // Add more mappings as needed
+    };
+    
+    // Check if query matches any known treatment patterns
+    for (const [key, aliases] of Object.entries(treatmentMapping)) {
+        if (cleanQuery.includes(key) || aliases.some(alias => cleanQuery.includes(alias))) {
+            const targetTreatment = flatTreatments.find(treatment => {
+                const treatmentName = (treatment.t_name || '').toLowerCase();
+                return treatmentName.includes(key) || aliases.some(alias => treatmentName.includes(alias));
+            });
+            
+            if (targetTreatment) {
+                console.log(`✅ Mapped "${cleanQuery}" to treatment: "${targetTreatment.t_name}"`);
+                return targetTreatment;
+            }
+        }
+    }
+    
+    // Fallback to existing matching logic
     const normalize = (s?: string) => (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
     
-    const exactMatch = flatTreatments.find(treatment => {
-      const treatmentName = normalize(treatment.t_name);
-      return treatmentName === cleanQuery;
-    });
-    
-    if (exactMatch) {
-      console.log(`✅ Found exact match: "${exactMatch.t_name}"`);
-      return exactMatch;
-    }
-
-    // Try partial match
-    const partialMatch = flatTreatments.find(treatment => {
-      const treatmentName = normalize(treatment.t_name);
-      return treatmentName.includes(cleanQuery) || cleanQuery.includes(treatmentName);
-    });
-
-    if (partialMatch) {
-      console.log(`✅ Found partial match: "${partialMatch.t_name}" for query: "${cleanQuery}"`);
-      return partialMatch;
-    }
-
-    console.log(`❌ No treatment found for query: "${query}"`);
-    return null;
-  }
+    return flatTreatments.find(treatment => {
+        const treatmentName = normalize(treatment.t_name);
+        return treatmentName === cleanQuery || 
+               treatmentName.includes(cleanQuery) || 
+               cleanQuery.includes(treatmentName);
+    }) || null;
+}
 }
 
 export const healthcareApi = new HealthcareApiService();

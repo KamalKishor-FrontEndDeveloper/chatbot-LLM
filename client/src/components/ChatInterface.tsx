@@ -46,10 +46,12 @@ export default function ChatInterface() {
   const [isLoading, setIsLoading] = useState(false)
   const [isDeepThinking, setIsDeepThinking] = useState(false)
   const [isFormOpen, setIsFormOpen] = useState(false)
+  const [isBookingCTAOpen, setIsBookingCTAOpen] = useState(false)
   const [streamingMessage, setStreamingMessage] = useState<ChatMessage | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(false)
   const [showSidebar, setShowSidebar] = useState(false)
   const chatContainerRef = useRef<HTMLDivElement>(null)
+  const [isUserNearBottom, setIsUserNearBottom] = useState(true)
   const { toast } = useToast()
 
   // Dark mode toggle
@@ -193,11 +195,41 @@ export default function ChatInterface() {
     handleSendMessage(query)
   }
 
+  // Scroll event handler to detect if user is near the bottom
   useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
+    const chatDiv = chatContainerRef.current
+    if (!chatDiv) return
+
+    const handleScroll = () => {
+      const threshold = 80 // px from bottom
+      const isNearBottom = chatDiv.scrollHeight - chatDiv.scrollTop - chatDiv.clientHeight < threshold
+      setIsUserNearBottom(isNearBottom)
     }
-  }, [messages, streamingMessage, isLoading])
+    chatDiv.addEventListener('scroll', handleScroll)
+    return () => {
+      chatDiv.removeEventListener('scroll', handleScroll)
+    }
+  }, [])
+
+  // Only auto-scroll if user is near the bottom
+  // Only auto-scroll to bottom when a new user message is sent
+  useEffect(() => {
+    const chatDiv = chatContainerRef.current;
+    if (!chatDiv) return;
+    // When the newest message is a user message, scroll so that message is at the top of the visible area
+    if (messages.length > 0 && messages[messages.length - 1].role === 'user') {
+      // The inner wrapper holds the message nodes
+      const inner = chatDiv.querySelector('.max-w-4xl');
+      if (inner && inner.lastElementChild) {
+        const last = inner.lastElementChild as HTMLElement;
+        // Place the last message at the top of the scroll container
+        chatDiv.scrollTop = last.offsetTop;
+      } else {
+        // Fallback: scroll to bottom
+        chatDiv.scrollTop = chatDiv.scrollHeight;
+      }
+    }
+  }, [messages]);
 
   const clearChat = () => {
     setMessages([])
@@ -270,7 +302,7 @@ export default function ChatInterface() {
                 <div className="w-16 h-16 bg-gradient-to-br from-blue-500 via-purple-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
                   <i className="fas fa-stethoscope text-white text-xl"></i>
                 </div>
-                <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-4">Welcome to HealthLantern AI</h2>
+                <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-4">Welcome to Thinkchat AI</h2>
                 <p className="text-slate-600 dark:text-slate-400 mb-8 text-base">
                   Your intelligent healthcare assistant for Citrine Clinic. Ask about treatments, pricing, or book appointments.
                 </p>
@@ -300,6 +332,7 @@ export default function ChatInterface() {
                     <ChatMessageComponent 
                       message={message} 
                       onFormStateChange={setIsFormOpen}
+                      onBookingCTAStateChange={setIsBookingCTAOpen}
                       data-testid={`message-${message.id}`} 
                     />
                   </div>
@@ -309,6 +342,8 @@ export default function ChatInterface() {
                     <ChatMessageComponent 
                       message={streamingMessage} 
                       onFormStateChange={setIsFormOpen}
+                      onBookingCTAStateChange={setIsBookingCTAOpen}
+                      isStreaming={true}
                       data-testid={`streaming-message`} 
                     />
                   </div>
@@ -326,7 +361,10 @@ export default function ChatInterface() {
         {/* Input Area */}
         <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200/50 dark:border-slate-700/50 shadow-lg">
           <div className="max-w-4xl mx-auto px-4 py-4">
-            <ChatInput onSendMessage={handleSendMessage} disabled={isLoading || isFormOpen} data-testid="chat-input" />
+            {/* Hide ChatInput when appointment form or CTA is open */}
+            {!(isFormOpen || isBookingCTAOpen) && (
+              <ChatInput onSendMessage={handleSendMessage} disabled={isLoading} data-testid="chat-input" />
+            )}
 
             {/* API Status Indicator */}
             {/* {healthStatus?.success && (
