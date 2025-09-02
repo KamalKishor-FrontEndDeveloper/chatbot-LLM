@@ -23,6 +23,7 @@ interface TreatmentCardProps {
   treatment: HealthcareTreatment
   onAsk?: (treatment: HealthcareTreatment) => void
   onBook?: (treatment: HealthcareTreatment) => void
+  onBookAppointment?: (treatment: HealthcareTreatment, doctor?: string) => void
   className?: string
   maxVisibleDoctors?: number
 }
@@ -41,12 +42,14 @@ export default function TreatmentCard({
   treatment,
   onAsk,
   onBook,
+  onBookAppointment,
   className,
   maxVisibleDoctors = 3,
 }: TreatmentCardProps) {
   const [fetchedDoctorNames, setFetchedDoctorNames] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [showQuoteForm, setShowQuoteForm] = useState(false)
+  const [showBookingPrompt, setShowBookingPrompt] = useState(false)
 
   // Helper function to get doctor IDs from JSON string or array
   const getDoctorIds = (treatment: HealthcareTreatment): number[] => {
@@ -162,9 +165,10 @@ export default function TreatmentCard({
   return (
     <div
       data-testid={`treatment-card-${treatment.id}`}
-      className={`w-full rounded-2xl border border-border bg-card p-3 md:p-4 transition-colors hover:bg-accent/20 shadow-sm ${className || ""}`}
+      className={`w-full rounded-2xl border border-border bg-card p-3 md:p-4 transition-colors hover:bg-accent/20 shadow-sm cursor-pointer ${className || ""}`}
       role="group"
       aria-label={`${categoryType} card for ${treatment.t_name ?? treatment.name}`}
+      onClick={() => setShowBookingPrompt(true)}
     >
       {/* Header: title + category + price chip (mobile-first) */}
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
@@ -194,7 +198,10 @@ export default function TreatmentCard({
           <div
             className={`rounded-md border border-border bg-background/60 px-2.5 py-1 text-right ${!hasPrice ? "cursor-pointer hover:bg-blue-50 hover:border-blue-200" : ""}`}
             aria-label="Price"
-            onClick={!hasPrice ? () => setShowQuoteForm(true) : undefined}
+            onClick={!hasPrice ? (e) => {
+              e.stopPropagation()
+              setShowQuoteForm(true)
+            } : undefined}
           >
             <p className="text-[10px] font-medium text-muted-foreground leading-none m-0 p-0">Price</p>
             <p
@@ -235,12 +242,17 @@ export default function TreatmentCard({
           ) : fetchedDoctorNames.length > 0 ? (
             <div className="flex flex-wrap items-center gap-2">
               {fetchedDoctorNames.slice(0, Math.max(0, maxVisibleDoctors || 3)).map((name, idx) => (
-                <span
+                <button
                   key={`${name}-${idx}`}
-                  className="rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onBookAppointment?.(treatment, name)
+                  }}
+                  className="rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 transition-colors cursor-pointer"
+                  title={`Book appointment with ${name}`}
                 >
                   {name}
-                </span>
+                </button>
               ))}
               {fetchedDoctorNames.length > (maxVisibleDoctors || 3) && (
                 <span className="rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground">
@@ -261,12 +273,17 @@ export default function TreatmentCard({
                 if (id === 11) name = "Dr DigiLantern"
 
                 return (
-                  <span
+                  <button
                     key={`fallback-${id}-${idx}`}
-                    className="rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onBookAppointment?.(treatment, name)
+                    }}
+                    className="rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 transition-colors cursor-pointer"
+                    title={`Book appointment with ${name}`}
                   >
                     {name}
-                  </span>
+                  </button>
                 )
               })}
             </div>
@@ -277,32 +294,48 @@ export default function TreatmentCard({
       )}
 
       {/* Actions: small, chatbot-appropriate quick actions (optional callbacks) */}
-      {(onAsk || onBook) && (
-        <div className="mt-3 flex items-center gap-2">
-          {onAsk && (
-            <button
-              type="button"
-              onClick={() => onAsk?.(treatment)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-              aria-label="Ask about this"
-            >
-              <MessageSquare className="h-3.5 w-3.5" />
-              <span>Ask about this</span>
-            </button>
-          )}
-          {onBook && (
-            <button
-              type="button"
-              onClick={() => onBook?.(treatment)}
-              className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 text-white px-2.5 py-1.5 text-xs font-semibold hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-              aria-label="Book consultation"
-            >
-              <CalendarCheck className="h-3.5 w-3.5" />
-              <span>Book consult</span>
-            </button>
-          )}
-        </div>
-      )}
+      <div className="mt-3 flex items-center gap-2">
+        {onAsk && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onAsk?.(treatment)
+            }}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+            aria-label="Ask about this"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            <span>Ask about this</span>
+          </button>
+        )}
+        {onBook && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onBook?.(treatment)
+            }}
+            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 text-white px-2.5 py-1.5 text-xs font-semibold hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+            aria-label="Book consultation"
+          >
+            <CalendarCheck className="h-3.5 w-3.5" />
+            <span>Book consult</span>
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setShowBookingPrompt(true)
+          }}
+          className="inline-flex items-center gap-1.5 rounded-md bg-green-600 text-white px-2.5 py-1.5 text-xs font-semibold hover:bg-green-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-600"
+          aria-label="Book appointment"
+        >
+          <CalendarCheck className="h-3.5 w-3.5" />
+          <span>Book Appointment</span>
+        </button>
+      </div>
 
       {/* Contact Quote Form Modal */}
       {showQuoteForm && (
@@ -311,6 +344,46 @@ export default function TreatmentCard({
           onClose={() => setShowQuoteForm(false)}
           onSuccess={() => setShowQuoteForm(false)}
         />
+      )}
+
+      {/* Booking Prompt Modal */}
+      {showBookingPrompt && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 max-w-sm w-full shadow-xl">
+            <h3 className="text-lg font-semibold mb-4 text-foreground">
+              Book Appointment
+            </h3>
+            <p className="text-sm text-muted-foreground mb-6">
+              Do you want to book an appointment for {treatment.t_name || treatment.name}?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowBookingPrompt(false)
+                  onBookAppointment?.(treatment)
+                }}
+                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors"
+              >
+                Yes, Book Now
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowBookingPrompt(false)
+                  // Show a friendly message when user declines
+                  if (onBookAppointment) {
+                    // This will trigger the parent to show a "no thanks" message
+                    onBookAppointment(treatment, "__decline__")
+                  }
+                }}
+                className="flex-1 border border-border bg-background px-4 py-2 rounded-md text-sm font-medium text-foreground hover:bg-accent/50 transition-colors"
+              >
+                No, Thanks
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

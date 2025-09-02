@@ -344,9 +344,9 @@ export class HealthcareApiService {
           phone: appointment.phone,
           date: appointment.date,
           service: appointment.service,
-          clinic_location_id: (appointment.clinic_location_id || 1).toString(),
+          clinic_location_id: (33).toString(),
           message: appointment.message || 'Appointment booking via chatbot',
-          app_source: appointment.app_source || 'https://www.healthlantern.com',
+          app_source: appointment.app_source || 'thinkchat AI',
           auth_token: this.authToken
         })
       });

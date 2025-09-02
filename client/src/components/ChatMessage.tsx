@@ -14,6 +14,7 @@ interface ChatMessageProps {
   onFormStateChange?: (isOpen: boolean) => void
   onBookingCTAStateChange?: (isOpen: boolean) => void
   isStreaming?: boolean
+  isLatest?: boolean
 }
 
 interface AppointmentData {
@@ -25,7 +26,7 @@ interface AppointmentData {
   message: string
 }
 
-export default function ChatMessageComponent({ message, isStreaming, onBookingCTAStateChange }: ChatMessageProps) {
+export default function ChatMessageComponent({ message, isStreaming, onBookingCTAStateChange, isLatest }: ChatMessageProps) {
   const formatTime = (timestamp: string) => {
     return new Date(timestamp).toLocaleTimeString("en-US", {
       hour: "numeric",
@@ -88,18 +89,40 @@ export default function ChatMessageComponent({ message, isStreaming, onBookingCT
   // Handler to cancel the form
   const handleFormCancel = () => {
     setShowForm(false)
-    setShowBookingCTA(true) // Show the booking CTA again
+    setShowBookingCTA(false) // Don't show CTA again when cancelled from treatment card
     setInitialAppointmentData(undefined) // Clear any prefilled data
+    // Show a friendly message when user cancels
+    setSubmitResult(
+      "👍 No problem! If you have any other questions about treatments, pricing, or need help with something else, just let me know. I'm here to assist you!"
+    )
+    setFormSubmitted(true)
+    if (typeof onBookingCTAStateChange === 'function') onBookingCTAStateChange(false)
   }
 
   // Use server-provided intent to decide whether to surface booking CTA
   React.useEffect(() => {
-    if (message.intent === "appointment_booking" && !formSubmitted) {
+    // Only surface CTA for the latest assistant message to avoid hiding input from older messages
+    if (isLatest && message.intent === "appointment_booking" && !formSubmitted && !showForm) {
       setShowBookingCTA(true)
     } else {
       setShowBookingCTA(false)
     }
-  }, [message.intent, formSubmitted])
+  }, [message.intent, formSubmitted, isLatest, showForm])
+
+  // Notify parent when CTA visibility changes so chat input can be hidden/shown
+  React.useEffect(() => {
+    if (isLatest && typeof onBookingCTAStateChange === 'function') {
+      onBookingCTAStateChange(showBookingCTA || showForm)
+    }
+  }, [showBookingCTA, showForm, onBookingCTAStateChange, isLatest])
+
+  // When a form submission result is shown, ensure parent knows CTA/form is closed
+  React.useEffect(() => {
+    if (formSubmitted && submitResult && typeof onBookingCTAStateChange === 'function') {
+      // CTA should be closed once result is displayed (only notify parent if this is the relevant/latest message)
+      if (isLatest) onBookingCTAStateChange(false)
+    }
+  }, [formSubmitted, submitResult, onBookingCTAStateChange, isLatest])
 
   if (message.role === "user") {
     return (
@@ -306,7 +329,32 @@ export default function ChatMessageComponent({ message, isStreaming, onBookingCT
                 ) : (
                   <> 
                     {message.treatments.slice(0, 5).map((treatment) => (
-                      <TreatmentCard key={treatment.id} treatment={treatment} />
+                      <TreatmentCard 
+                        key={treatment.id} 
+                        treatment={treatment}
+                        onBookAppointment={(treatment, doctor) => {
+                          // Handle decline case
+                          if (doctor === "__decline__") {
+                            setSubmitResult(
+                              "👍 No problem! If you have any other questions about treatments, pricing, or need help with something else, just let me know. I'm here to assist you!"
+                            )
+                            setFormSubmitted(true)
+                            if (typeof onBookingCTAStateChange === 'function') onBookingCTAStateChange(false)
+                            return
+                          }
+                          
+                          // Prefill appointment data with treatment and doctor info
+                          const prefill: Partial<AppointmentData> = {
+                            service: treatment.t_name || treatment.name || ""
+                          }
+                          if (doctor && doctor !== "__decline__") {
+                            (prefill as any).preferredDoctor = doctor
+                          }
+                          setInitialAppointmentData(prefill)
+                          setShowForm(true)
+                          if (typeof onBookingCTAStateChange === 'function') onBookingCTAStateChange(true)
+                        }}
+                      />
                     ))}
 
                     {message.treatments.length > 5 && (

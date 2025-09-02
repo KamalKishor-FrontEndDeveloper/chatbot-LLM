@@ -12,7 +12,7 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 import { apiRequest } from "@/lib/queryClient"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
-import { Moon, Sun, Menu, MessageSquare, Download, Trash2 } from "lucide-react"
+import { Moon, Sun, Menu, MessageSquare, Download, Trash2, Settings } from "lucide-react"
 
 const suggestedQueries = [
   {
@@ -211,25 +211,21 @@ export default function ChatInterface() {
     }
   }, [])
 
-  // Only auto-scroll if user is near the bottom
-  // Only auto-scroll to bottom when a new user message is sent
+  // Auto-scroll behavior:
+  // - If the user is near the bottom, always scroll to the bottom when messages update.
+  // - If the user has scrolled up, don't jump their view.
+  // This avoids placing a newly-sent user message at the top (which created a large empty
+  // area when a larger assistant message with the appointment form was rendered later).
   useEffect(() => {
     const chatDiv = chatContainerRef.current;
     if (!chatDiv) return;
-    // When the newest message is a user message, scroll so that message is at the top of the visible area
-    if (messages.length > 0 && messages[messages.length - 1].role === 'user') {
-      // The inner wrapper holds the message nodes
-      const inner = chatDiv.querySelector('.max-w-4xl');
-      if (inner && inner.lastElementChild) {
-        const last = inner.lastElementChild as HTMLElement;
-        // Place the last message at the top of the scroll container
-        chatDiv.scrollTop = last.offsetTop;
-      } else {
-        // Fallback: scroll to bottom
-        chatDiv.scrollTop = chatDiv.scrollHeight;
-      }
-    }
-  }, [messages]);
+
+    // If the user has intentionally scrolled up, preserve their scroll position.
+    if (!isUserNearBottom) return;
+
+    // Safe, simple behavior: scroll to the bottom to show newest assistant content (including forms)
+    chatDiv.scrollTop = chatDiv.scrollHeight;
+  }, [messages, isUserNearBottom]);
 
   const clearChat = () => {
     setMessages([])
@@ -247,7 +243,7 @@ export default function ChatInterface() {
   }
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+    <div className="flex h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 overflow-hidden">
       {/* Sidebar */}
       <div className={`fixed inset-y-0 left-0 z-50 w-80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-r border-slate-200/50 dark:border-slate-700/50 shadow-xl transform transition-all duration-300 ${showSidebar ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:inset-0`}>
         <div className="flex flex-col h-full">
@@ -282,10 +278,24 @@ export default function ChatInterface() {
               <Trash2 className="w-4 h-4 mr-2" />
               Clear Chat
             </Button>
-            <Button variant="outline" size="sm" onClick={exportChat} className="w-full justify-start hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 dark:hover:bg-blue-900/20 dark:hover:border-blue-800 dark:hover:text-blue-400 transition-all duration-200">
-              <Download className="w-4 h-4 mr-2" />
-              Export Chat
-            </Button>
+            <div className="space-y-2">
+              <Button variant="outline" size="sm" onClick={exportChat} className="w-full justify-start hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 dark:hover:bg-blue-900/20 dark:hover:border-blue-800 dark:hover:text-blue-400 transition-all duration-200">
+                <Download className="w-4 h-4 mr-2" />
+                Export Chat
+              </Button>
+
+              <a href="/settings">
+                <Button variant="outline" size="sm" className="w-full justify-start hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200">
+                  <Settings className="w-4 h-4 mr-2" />
+                  Settings
+                </Button>
+              </a>
+
+              <Button variant="outline" size="sm" onClick={() => setIsDarkMode(!isDarkMode)} className="w-full justify-start hover:bg-purple-50 hover:border-purple-200 hover:text-purple-700 dark:hover:bg-purple-900/20 dark:hover:border-purple-800 dark:hover:text-purple-400 transition-all duration-200">
+                {isDarkMode ? <Sun className="w-4 h-4 mr-2" /> : <Moon className="w-4 h-4 mr-2" />}
+                {isDarkMode ? 'Light Mode' : 'Dark Mode'}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -325,6 +335,7 @@ export default function ChatInterface() {
               ref={chatContainerRef}
               className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
               data-testid="chat-container"
+              style={{ paddingBottom: isBookingCTAOpen ? '0' : '1rem' }}
             >
               <div className="max-w-4xl mx-auto">
                 {messages.map((message, index) => (
@@ -333,6 +344,7 @@ export default function ChatInterface() {
                       message={message} 
                       onFormStateChange={setIsFormOpen}
                       onBookingCTAStateChange={setIsBookingCTAOpen}
+                      isLatest={index === messages.length - 1}
                       data-testid={`message-${message.id}`} 
                     />
                   </div>
@@ -344,6 +356,7 @@ export default function ChatInterface() {
                       onFormStateChange={setIsFormOpen}
                       onBookingCTAStateChange={setIsBookingCTAOpen}
                       isStreaming={true}
+                      isLatest={true}
                       data-testid={`streaming-message`} 
                     />
                   </div>
@@ -360,11 +373,9 @@ export default function ChatInterface() {
 
         {/* Input Area */}
         <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200/50 dark:border-slate-700/50 shadow-lg">
-          <div className="max-w-4xl mx-auto px-4 py-4">
-            {/* Hide ChatInput when appointment form or CTA is open */}
-            {!(isFormOpen || isBookingCTAOpen) && (
-              <ChatInput onSendMessage={handleSendMessage} disabled={isLoading} data-testid="chat-input" />
-            )}
+          <div className={`max-w-4xl mx-auto px-4 ${isBookingCTAOpen ? 'py-2' : 'py-4'}`}>
+            {/* Always show ChatInput (do not hide when appointment CTA/form is open) */}
+            <ChatInput onSendMessage={handleSendMessage} disabled={isLoading} hideQuickActions={isBookingCTAOpen} data-testid="chat-input" />
 
             {/* API Status Indicator */}
             {/* {healthStatus?.success && (

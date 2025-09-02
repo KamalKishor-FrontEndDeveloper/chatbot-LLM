@@ -9,9 +9,10 @@ import { Send, Mic, MicOff } from "lucide-react"
 interface ChatInputProps {
   onSendMessage: (message: string) => void
   disabled?: boolean
+  hideQuickActions?: boolean
 }
 
-export default function ChatInput({ onSendMessage, disabled }: ChatInputProps) {
+export default function ChatInput({ onSendMessage, disabled, hideQuickActions }: ChatInputProps) {
   const [message, setMessage] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -148,8 +149,9 @@ export default function ChatInput({ onSendMessage, disabled }: ChatInputProps) {
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className="flex flex-wrap gap-2 justify-center">
+      {/* Quick Actions - Hide when appointment form is active */}
+      {!hideQuickActions && (
+        <div className="flex flex-wrap gap-2 justify-center">
         <Button
           variant="outline"
           size="sm"
@@ -174,7 +176,8 @@ export default function ChatInput({ onSendMessage, disabled }: ChatInputProps) {
         >
           �‍⚕️ Know about Dr Niti Gaur
         </Button>
-      </div>
+        </div>
+      )}
     </div>
   )
 }
